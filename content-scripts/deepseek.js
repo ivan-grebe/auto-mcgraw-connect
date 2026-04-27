@@ -386,6 +386,7 @@ function startObserving() {
   observationStartTime = Date.now();
   observationTimeout = setTimeout(() => {
     if (!hasResponded) {
+      notifyAiResponseTimeout();
       resetObservation();
     }
   }, 180000);
@@ -402,6 +403,18 @@ function startObserving() {
   });
 
   checkIntervalId = setInterval(checkForResponse, 1000);
+}
+
+function notifyAiResponseTimeout() {
+  try {
+    chrome.runtime.sendMessage({
+      type: "aiResponseTimeout",
+      aiModel: "deepseek",
+      reason: "DeepSeek did not produce a response within 180 seconds.",
+    });
+  } catch (error) {
+    console.error("Error notifying timeout:", error);
+  }
 }
 
 function repairJsonResponseText(text) {

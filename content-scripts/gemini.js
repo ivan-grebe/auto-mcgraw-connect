@@ -187,6 +187,7 @@ function startObserving() {
   observationStartTime = Date.now();
   observationTimeout = setTimeout(() => {
     if (!hasResponded) {
+      notifyAiResponseTimeout();
       resetObservation();
     }
   }, 180000);
@@ -267,6 +268,18 @@ function startObserving() {
     subtree: true,
     characterData: true,
   });
+}
+
+function notifyAiResponseTimeout() {
+  try {
+    chrome.runtime.sendMessage({
+      type: "aiResponseTimeout",
+      aiModel: "gemini",
+      reason: "Gemini did not produce a response within 180 seconds.",
+    });
+  } catch (error) {
+    console.error("Error notifying timeout:", error);
+  }
 }
 
 function repairJsonResponseText(text) {

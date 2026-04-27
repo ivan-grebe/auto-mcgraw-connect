@@ -3,6 +3,10 @@
 // functions defined here are available in the provider's global scope.
 
 function buildPrompt(questionData) {
+  if (questionData.type === "connect_slot_graph") {
+    return buildSlotGraphPrompt(questionData);
+  }
+
   const { type, question, options, previousCorrection } = questionData;
   let text = `Type: ${type}\nQuestion: ${question}`;
 
@@ -17,10 +21,6 @@ function buildPrompt(questionData) {
       }", your answer was incorrect. The correct answer was: ${JSON.stringify(
         previousCorrection.correctAnswer
       )}\n\nNow answer this new question:\n\n` + text;
-  }
-
-  if (type === "connect_slot_graph") {
-    return buildSlotGraphPrompt(questionData);
   }
 
   if (type === "matching") {

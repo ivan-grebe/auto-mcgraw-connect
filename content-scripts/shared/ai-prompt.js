@@ -49,23 +49,10 @@ function buildPrompt(questionData) {
 }
 
 function buildSlotGraphPrompt(questionData) {
-  const { prompt, context, slots, previousCorrection } = questionData;
+  const { prompt, context, slots } = questionData;
   const slotList = Array.isArray(slots) ? slots : [];
 
-  let text = "";
-
-  if (
-    previousCorrection &&
-    previousCorrection.question &&
-    previousCorrection.correctAnswer
-  ) {
-    text +=
-      `CORRECTION FROM PREVIOUS ANSWER: For the question "${previousCorrection.question}", your answer was incorrect. The correct answer was: ${JSON.stringify(
-        previousCorrection.correctAnswer
-      )}\n\nNow answer this new question.\n\n`;
-  }
-
-  text += `Question / page prompt:\n${prompt || ""}`;
+  let text = `Question / page prompt:\n${prompt || ""}`;
 
   if (context && context !== prompt) {
     text += `\n\nFull page context:\n${context}`;
@@ -89,7 +76,6 @@ function buildSlotGraphPrompt(questionData) {
   text += `\n- If a slot has no answer (truly blank cell), omit it or set its value to null. Do not invent values.`;
   text += `\n- Use slot "hint", "group", and "groupRole" to keep paired cells (label/amount, debit/credit, row 1/row 2) consistent.`;
   text += `\n- Do NOT emit any other keys (no "actions", no selectors). The page knows how to apply each slot.`;
-  text += `\n\nDO NOT acknowledge any correction in your response, only answer the new question.`;
 
   return text;
 }

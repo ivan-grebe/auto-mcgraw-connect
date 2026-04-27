@@ -672,7 +672,6 @@ async function buildSlotGraphSnapshot() {
       prompt: promptText,
       context: pageText,
       slots,
-      previousCorrection: null,
     },
   };
 }
@@ -1470,7 +1469,6 @@ function parseQuestion() {
     type: questionType,
     question: questionText,
     options,
-    previousCorrection: null,
   };
 }
 

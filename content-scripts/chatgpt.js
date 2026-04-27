@@ -9,159 +9,14 @@ let lastSentResponseText = "";
 let assistantTextAtQuestion = "";
 let pendingCandidateText = "";
 let pendingCandidateSeenAt = 0;
-const DEBUG_LOG_KEY = "automcgraw.debugLogs.v1";
-const DEBUG_MAX_LOGS = 600;
-
-window.__automcgrawDebugLogs = window.__automcgrawDebugLogs || [];
-
-function debugLog(event, details = {}, level = "debug") {
-  const entry = {
-    ts: new Date().toISOString(),
-    side: "chatgpt",
-    level,
-    event,
-    page: getDebugPageState(),
-    details: sanitizeDebugValue(details),
-  };
-
-  appendDebugEntry(entry);
-
-  const consoleMethod =
-    level === "error" ? "error" : level === "warn" ? "warn" : "debug";
-  console[consoleMethod]("[AutoMcGraw]", event, entry);
-}
-
-function appendDebugEntry(entry) {
-  try {
-    window.__automcgrawDebugLogs.push(entry);
-    window.__automcgrawDebugLogs = window.__automcgrawDebugLogs.slice(
-      -DEBUG_MAX_LOGS
-    );
-  } catch (error) {}
-
-  try {
-    const existing = JSON.parse(localStorage.getItem(DEBUG_LOG_KEY) || "[]");
-    existing.push(entry);
-    localStorage.setItem(
-      DEBUG_LOG_KEY,
-      JSON.stringify(existing.slice(-DEBUG_MAX_LOGS))
-    );
-  } catch (error) {}
-
-  try {
-    document.documentElement.setAttribute(
-      "data-automcgraw-last-debug",
-      `${entry.ts} ${entry.event}`
-    );
-  } catch (error) {}
-}
-
-function getDebugLogs() {
-  try {
-    return JSON.parse(localStorage.getItem(DEBUG_LOG_KEY) || "[]");
-  } catch (error) {
-    return window.__automcgrawDebugLogs || [];
-  }
-}
-
-function clearDebugLogs(reason = "manual") {
-  try {
-    window.__automcgrawDebugLogs = [];
-    localStorage.removeItem(DEBUG_LOG_KEY);
-  } catch (error) {}
-  debugLog("debug_logs_cleared", { reason });
-}
-
-function getDebugPageState() {
-  return {
-    title: document.title,
-    url: location.href,
-    hasResponded,
-    responseInFlight,
-    messageCountAtQuestion,
-    observationActive: Boolean(observationStartTime),
-  };
-}
-
-function sanitizeDebugValue(value, depth = 0) {
-  if (depth > 4) return "[depth-limit]";
-  if (value == null || typeof value === "number" || typeof value === "boolean") {
-    return value;
-  }
-  if (typeof value === "string") {
-    return value.length > 1200 ? `${value.slice(0, 1200)}...` : value;
-  }
-  if (value instanceof Error) {
-    return {
-      name: value.name,
-      message: value.message,
-      stack: value.stack?.slice(0, 1600) || "",
-    };
-  }
-  if (value instanceof Element) {
-    return describeElementForDebug(value);
-  }
-  if (Array.isArray(value)) {
-    return value.slice(0, 80).map((item) => sanitizeDebugValue(item, depth + 1));
-  }
-  if (typeof value === "object") {
-    const result = {};
-    Object.entries(value)
-      .slice(0, 80)
-      .forEach(([key, nestedValue]) => {
-        result[key] = sanitizeDebugValue(nestedValue, depth + 1);
-      });
-    return result;
-  }
-  return String(value);
-}
-
-function describeElementForDebug(element) {
-  return {
-    tagName: element.tagName,
-    id: element.id || "",
-    className: String(element.className || ""),
-    text: normalizeWhitespace(
-      element.innerText || element.textContent || element.value || ""
-    ).slice(0, 500),
-    ariaLabel: element.getAttribute("aria-label") || "",
-    testId: element.getAttribute("data-testid") || "",
-  };
-}
-
-function normalizeWhitespace(text) {
-  return String(text || "").replace(/\s+/g, " ").trim();
-}
-
-debugLog("content_script_loaded", { href: location.href });
-setupDebugBridge();
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  debugLog("message_received", { type: message.type });
-
   if (message.type === "ping") {
     sendResponse({ received: true });
     return true;
   }
 
-  if (message.type === "getDebugLogs") {
-    sendResponse({ received: true, logs: getDebugLogs() });
-    return true;
-  }
-
-  if (message.type === "clearDebugLogs") {
-    clearDebugLogs(message.reason || "message");
-    sendResponse({ received: true });
-    return true;
-  }
-
   if (message.type === "receiveQuestion") {
-    debugLog("receive_question_start", {
-      questionType: message.question?.type,
-      questionLength: String(message.question?.question || "").length,
-      controlCount: message.question?.controls?.length || 0,
-      dropdownCount: message.question?.dropdowns?.length || 0,
-    });
     resetObservation();
 
     const messages = document.querySelectorAll(
@@ -173,11 +28,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     insertQuestion(message.question)
       .then(() => {
-        debugLog("receive_question_inserted");
         sendResponse({ received: true, status: "processing" });
       })
       .catch((error) => {
-        debugLog("receive_question_error", { error }, "error");
         sendResponse({ received: false, error: error.message });
       });
 
@@ -185,55 +38,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-function setupDebugBridge() {
-  if (window.__automcgrawDebugBridgeInstalled) return;
-  window.__automcgrawDebugBridgeInstalled = true;
-
-  window.addEventListener("message", (event) => {
-    if (event.source !== window) return;
-    const data = event.data || {};
-    if (data.source !== "automcgraw-debug" || data.type !== "collect") return;
-
-    const payload = {
-      source: "automcgraw-debug",
-      type: "logs",
-      side: "chatgpt",
-      requestId: data.requestId || "",
-      logs: getDebugLogs(),
-      backgroundLogs: [],
-      backgroundError: "",
-      backgroundResponse: null,
-    };
-
-    try {
-      chrome.runtime.sendMessage(chrome.runtime.id, { type: "getBackgroundDebugLogs" }, (response) => {
-        payload.backgroundResponse = response || null;
-        if (chrome.runtime.lastError) {
-          payload.backgroundError = chrome.runtime.lastError.message;
-        } else if (!response?.received) {
-          payload.backgroundError = `Unexpected background response: ${JSON.stringify(
-            response
-          )}`;
-        } else {
-          payload.backgroundLogs = Array.isArray(response?.logs)
-            ? response.logs
-            : [];
-        }
-        window.postMessage(payload, "*");
-      });
-    } catch (error) {
-      payload.backgroundError = error.message;
-      window.postMessage(payload, "*");
-    }
-  });
-}
-
 function resetObservation() {
-  debugLog("observation_reset", {
-    hadTimeout: Boolean(observationTimeout),
-    hadInterval: Boolean(observationInterval),
-    hadObserver: Boolean(observer),
-  });
   hasResponded = false;
   responseInFlight = false;
   observationStartTime = 0;
@@ -255,12 +60,7 @@ function resetObservation() {
 
 async function insertQuestion(questionData) {
   const text = buildPrompt(questionData);
-  debugLog("insert_question_start", {
-    promptLength: text.length,
-    promptPreview: text.slice(0, 1200),
-  });
   const inputArea = await waitForChatInput();
-  debugLog("insert_question_input_found", { inputArea });
 
   inputArea.focus();
 
@@ -291,9 +91,7 @@ async function insertQuestion(questionData) {
   inputArea.dispatchEvent(new Event("change", { bubbles: true }));
 
   const sendButton = await waitForSendButton();
-  debugLog("insert_question_send_button_found", { sendButton });
   sendButton.click();
-  debugLog("insert_question_send_clicked");
   startObserving();
 }
 
@@ -411,13 +209,13 @@ function waitForSendButton(timeout = 10000) {
       'button[data-testid="fruitjuice-send-button"]',
     ],
     timeout,
-    (element) => !element.disabled && element.getAttribute("aria-disabled") !== "true"
+    (element) =>
+      !element.disabled && element.getAttribute("aria-disabled") !== "true"
   );
 }
 
 function waitForElement(selectors, timeout, predicate = () => true) {
   const startedAt = Date.now();
-  debugLog("wait_for_element_start", { selectors, timeout });
 
   return new Promise((resolve, reject) => {
     const interval = setInterval(() => {
@@ -425,12 +223,6 @@ function waitForElement(selectors, timeout, predicate = () => true) {
         const element = document.querySelector(selector);
         if (element && predicate(element)) {
           clearInterval(interval);
-          debugLog("wait_for_element_found", {
-            selectors,
-            selector,
-            elapsed: Date.now() - startedAt,
-            element,
-          });
           resolve(element);
           return;
         }
@@ -438,11 +230,6 @@ function waitForElement(selectors, timeout, predicate = () => true) {
 
       if (Date.now() - startedAt > timeout) {
         clearInterval(interval);
-        debugLog(
-          "wait_for_element_timeout",
-          { selectors, timeout },
-          "error"
-        );
         reject(new Error(`Element not found: ${selectors.join(", ")}`));
       }
     }, 150);
@@ -451,13 +238,8 @@ function waitForElement(selectors, timeout, predicate = () => true) {
 
 function startObserving() {
   observationStartTime = Date.now();
-  debugLog("observation_start", {
-    messageCountAtQuestion,
-    assistantTextLength: assistantTextAtQuestion.length,
-  });
   observationTimeout = setTimeout(() => {
     if (!hasResponded) {
-      debugLog("observation_timeout", {}, "warn");
       notifyAiResponseTimeout();
       resetObservation();
     }
@@ -490,12 +272,6 @@ function tryCaptureLatestResponse() {
   if (isResponseStillGenerating(latestMessage)) return;
 
   const responseText = repairJsonResponseText(extractJsonText(latestMessage));
-  if (responseText) {
-    debugLog("response_candidate", {
-      responseLength: responseText.length,
-      responsePreview: responseText.slice(0, 1200),
-    });
-  }
   if (
     !responseText ||
     responseText === lastSentResponseText ||
@@ -519,30 +295,22 @@ function tryCaptureLatestResponse() {
     if (parsed.answer !== undefined || parsed.actions || parsed.slots) {
       responseInFlight = true;
       hasResponded = true;
-      debugLog("response_json_valid_sending", {
-        hasAnswer: parsed.answer !== undefined,
-        actionCount: Array.isArray(parsed.actions) ? parsed.actions.length : null,
-        slotCount: parsed.slots ? Object.keys(parsed.slots).length : null,
-      });
       chrome.runtime
         .sendMessage({
           type: "chatGPTResponse",
           response: responseText,
         })
         .then(() => {
-          debugLog("response_sent_to_background");
           lastSentResponseText = responseText;
           resetObservation();
         })
         .catch((error) => {
           responseInFlight = false;
           hasResponded = false;
-          debugLog("response_send_error", { error }, "error");
           console.error("Error sending response:", error);
         });
     }
   } catch (error) {
-    debugLog("response_json_parse_error", { error }, "warn");
     if (Date.now() - observationStartTime > 30000) {
       const fallback = repairJsonResponseText(
         findJsonObject(latestMessage.textContent.trim())
@@ -554,24 +322,18 @@ function tryCaptureLatestResponse() {
       ) {
         responseInFlight = true;
         hasResponded = true;
-        debugLog("response_fallback_sending", {
-          fallbackLength: fallback.length,
-          fallbackPreview: fallback.slice(0, 1200),
-        });
         chrome.runtime
           .sendMessage({
             type: "chatGPTResponse",
             response: fallback,
           })
           .then(() => {
-            debugLog("response_fallback_sent_to_background");
             lastSentResponseText = fallback;
             resetObservation();
           })
           .catch((sendError) => {
             responseInFlight = false;
             hasResponded = false;
-            debugLog("response_fallback_send_error", { sendError }, "error");
             console.error("Error sending fallback response:", sendError);
           });
       }
@@ -587,7 +349,7 @@ function notifyAiResponseTimeout() {
       reason: "ChatGPT did not produce a response within 180 seconds.",
     });
   } catch (error) {
-    debugLog("observation_timeout_notify_error", { error }, "error");
+    console.error("Error notifying timeout:", error);
   }
 }
 
@@ -595,9 +357,9 @@ function isResponseStillGenerating(message) {
   return Boolean(
     document.querySelector('[data-testid="stop-button"]') ||
       message.querySelector(".result-streaming") ||
-      message.closest('[data-message-author-role="assistant"]')?.querySelector(
-        '[aria-label*="Stop"], [data-testid*="stop"]'
-      )
+      message
+        .closest('[data-message-author-role="assistant"]')
+        ?.querySelector('[aria-label*="Stop"], [data-testid*="stop"]')
   );
 }
 
@@ -630,7 +392,11 @@ function sanitizeResponseText(text) {
 }
 
 function looksLikeJsonResponse(text) {
-  return text.startsWith("{") && text.endsWith("}") && /"answer"|"actions"|"slots"/.test(text);
+  return (
+    text.startsWith("{") &&
+    text.endsWith("}") &&
+    /"answer"|"actions"|"slots"/.test(text)
+  );
 }
 
 function findJsonObject(text) {

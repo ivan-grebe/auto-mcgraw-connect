@@ -1049,7 +1049,6 @@ async function navigateForward({ filledSlots }) {
     const saveButton = findInToolSaveButton();
     if (saveButton) {
       const beforeActiveNumber = getActiveTransactionNumberAcrossFrames();
-      const beforeActiveTab = getActiveAssessmentTabLabel();
       clickElement(saveButton);
       await waitForInToolSaveToSettle();
       if (!isAutomating) return false;

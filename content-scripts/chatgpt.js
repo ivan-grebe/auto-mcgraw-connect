@@ -292,7 +292,7 @@ function tryCaptureLatestResponse() {
 
   try {
     const parsed = JSON.parse(responseText);
-    if (parsed.answer !== undefined || parsed.actions || parsed.slots) {
+    if (parsed.answer !== undefined || parsed.slots) {
       responseInFlight = true;
       hasResponded = true;
       chrome.runtime
@@ -395,7 +395,7 @@ function looksLikeJsonResponse(text) {
   return (
     text.startsWith("{") &&
     text.endsWith("}") &&
-    /"answer"|"actions"|"slots"/.test(text)
+    /"answer"|"slots"/.test(text)
   );
 }
 

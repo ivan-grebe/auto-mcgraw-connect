@@ -225,7 +225,7 @@ function startObserving() {
 
     try {
       const parsed = JSON.parse(responseText);
-      if ((parsed.answer !== undefined || parsed.actions || parsed.slots) && !hasResponded) {
+      if ((parsed.answer !== undefined || parsed.slots) && !hasResponded) {
         hasResponded = true;
         chrome.runtime
           .sendMessage({

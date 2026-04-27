@@ -281,7 +281,7 @@ function processResponse(responseText) {
   try {
     const parsed = JSON.parse(cleanedText);
 
-    if (parsed && (parsed.answer !== undefined || parsed.actions || parsed.slots) && !hasResponded) {
+    if (parsed && (parsed.answer !== undefined || parsed.slots) && !hasResponded) {
       hasResponded = true;
       chrome.runtime
         .sendMessage({
@@ -348,7 +348,6 @@ function checkForResponse() {
             if (
               responseText.includes("{") &&
               (responseText.includes('"answer"') ||
-                responseText.includes('"actions"') ||
                 responseText.includes('"slots"'))
             ) {
               if (processResponse(responseText)) return;
@@ -360,7 +359,7 @@ function checkForResponse() {
 
     const messageText = message.textContent.trim();
     const jsonText = findJsonObject(messageText);
-    if (jsonText && /"answer"|"actions"|"slots"/.test(jsonText)) {
+    if (jsonText && /"answer"|"slots"/.test(jsonText)) {
       const responseText = jsonText;
       if (processResponse(responseText)) return;
     }

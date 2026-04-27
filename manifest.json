@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Auto-McGraw Smartbook",
+  "name": "Auto-McGraw (Smartbook + Connect)",
   "version": "2.6",
-  "description": "Transfers a question from MHEducation's Smartbook to AI assistants and then uses their response to auto-select an answer.",
+  "description": "Automates McGraw Hill Smartbook and Connect homework by routing questions through ChatGPT, Gemini, or DeepSeek and applying the AI's answers back to the page.",
   "permissions": ["tabs", "scripting", "storage"],
   "host_permissions": [
     "https://learning.mheducation.com/*",

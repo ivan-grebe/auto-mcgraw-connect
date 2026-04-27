@@ -21,7 +21,6 @@ let isAutomating = false;
 let buttonAdded = false;
 let slotIdCounter = 1;
 let lastSlotMap = new Map();
-let lastSnapshot = null;
 let awaitingAiResponse = false;
 let processingAiResponse = false;
 let consecutiveSetupClicks = 0;
@@ -406,7 +405,6 @@ function stopAutomation(reason = "Quiz completed") {
   consecutiveSetupClicks = 0;
   consecutiveEmptySnapshots = 0;
   lastSlotMap = new Map();
-  lastSnapshot = null;
 
   const btn = document.querySelector(".header__automcgraw--main");
   if (btn) btn.textContent = "Ask AI";
@@ -484,8 +482,6 @@ async function checkForNextStep() {
 
   consecutiveSetupClicks = 0;
   consecutiveEmptySnapshots = 0;
-  lastSnapshot = snapshot;
-
 
   sendToAi(snapshot.question);
 }

@@ -176,10 +176,6 @@ function buildSlotGraphPrompt(questionData) {
   return text;
 }
 
-function normalizeWhitespace(text) {
-  return String(text || "").replace(/\s+/g, " ").trim();
-}
-
 function escapeHtml(text) {
   return String(text || "")
     .replace(/&/g, "&amp;")

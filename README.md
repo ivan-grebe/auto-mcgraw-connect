@@ -18,7 +18,7 @@
 
 ## Fork Notice
 
-This fork is based on [`GooglyBlox/auto-mcgraw`](https://github.com/GooglyBlox/auto-mcgraw) (originally v2.4/main); the fork is currently at v2.5. The original SmartBook flow is preserved while adding broader McGraw Hill Connect support.
+This fork is based on [`GooglyBlox/auto-mcgraw`](https://github.com/GooglyBlox/auto-mcgraw) (originally v2.4/main); the fork is currently at v2.6. The original SmartBook flow is preserved while adding broader McGraw Hill Connect support.
 
 Major changes compared with the original project:
 

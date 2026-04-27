@@ -499,11 +499,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
   }
 
-  if (message.type === "ping") {
-    sendResponse({ received: true });
-    return true;
-  }
-
   if (message.type === "getBackgroundDebugLogs") {
     backgroundDebugLogs.push({
       ts: new Date().toISOString(),

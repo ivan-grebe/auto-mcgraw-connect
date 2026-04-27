@@ -34,8 +34,7 @@ const AI_MODELS = {
   },
   deepseek: {
     tabQuery: { url: ["https://chat.deepseek.com/*"] },
-    hosts: ["chat.deepseek.com", "deepseek.chat"],
-    preferredHost: "chat.deepseek.com",
+    hosts: ["chat.deepseek.com"],
   },
 };
 const AI_RESPONSE_MODEL_BY_MESSAGE_TYPE = {

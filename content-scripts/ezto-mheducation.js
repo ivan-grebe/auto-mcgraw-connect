@@ -101,7 +101,6 @@ function clearDebugLogs(reason = "manual") {
     window.__automcgrawDebugLogs = [];
     localStorage.removeItem(DEBUG_LOG_KEY);
   } catch (error) {}
-  debugLog("debug_logs_cleared", { reason });
 }
 
 function getDebugPageState() {
@@ -185,7 +184,6 @@ function setupMessageListener() {
   }
 
   messageListener = (message, sender, sendResponse) => {
-    debugLog("message_received", { type: message.type });
 
     if (message.type === "ping") {
       sendResponse({ received: true });
@@ -204,13 +202,8 @@ function setupMessageListener() {
     }
 
     if (message.type === "processChatGPTResponse") {
-      debugLog("process_response_message", {
-        responseLength: String(message.response || "").length,
-        responsePreview: String(message.response || "").slice(0, 1200),
-      });
       handleAiResponse(message.response)
         .then(() => {
-          debugLog("process_response_message_complete");
           sendResponse({ received: true });
         })
         .catch((error) => {
@@ -223,9 +216,6 @@ function setupMessageListener() {
     }
 
     if (message.type === "stopAutomation") {
-      debugLog("stop_message", {
-        reason: message.reason || "Automation stopped",
-      });
       stopAutomation(message.reason || "Automation stopped");
       sendResponse({ received: true });
       return true;
@@ -427,7 +417,6 @@ function stopAutomation(reason = "Quiz completed") {
 async function checkForNextStep() {
   if (!isAutomating) return;
   if (awaitingAiResponse || processingAiResponse) {
-    debugLog("next_step_waiting", { awaitingAiResponse, processingAiResponse });
     return;
   }
 
@@ -462,10 +451,6 @@ async function checkForNextStep() {
 
   if (!snapshot || !snapshot.slots.length) {
     consecutiveEmptySnapshots++;
-    debugLog("snapshot_empty", {
-      consecutiveEmptySnapshots,
-      pageTextLength: snapshot?.pageText?.length || 0,
-    });
 
     // 1. Re-snapshot first — embedded tools sometimes briefly render no
     //    controls between sub-problems or right after Record entry.
@@ -479,7 +464,6 @@ async function checkForNextStep() {
     const setupButton = findSetupRevealButton();
     if (setupButton && consecutiveSetupClicks < MAX_SETUP_CLICKS) {
       consecutiveSetupClicks++;
-      debugLog("setup_button_click", { setupButton, consecutiveSetupClicks });
       clickElement(setupButton);
       consecutiveEmptySnapshots = 0;
       setTimeout(() => checkForNextStep(), 1500);
@@ -502,13 +486,6 @@ async function checkForNextStep() {
   consecutiveEmptySnapshots = 0;
   lastSnapshot = snapshot;
 
-  debugLog("snapshot_ready", {
-    slotCount: snapshot.slots.length,
-    slotKinds: snapshot.slots.map((s) => s.kind),
-    pageTextLength: snapshot.pageText.length,
-    activeAssessmentTab: getActiveAssessmentTabLabel(),
-    visibleAssessmentTabs: getVisibleAssessmentTabLabels(),
-  });
 
   sendToAi(snapshot.question);
 }
@@ -517,11 +494,6 @@ function sendToAi(question) {
   awaitingAiResponse = true;
   setAutomationDiagnostic(`sending_to_ai:${question.type}`);
   getSelectedAiModel().then((aiModel) => {
-    debugLog("send_to_ai", {
-      type: question.type,
-      slotCount: question.slots?.length || 0,
-      aiModel,
-    });
     chrome.runtime.sendMessage(
       {
         type: "sendQuestionToChatGPT",
@@ -545,7 +517,6 @@ function sendToAi(question) {
 
 async function handleAiResponse(responseText) {
   if (!isAutomating) {
-    debugLog("response_ignored_not_automating");
     return;
   }
 
@@ -559,13 +530,6 @@ async function handleAiResponse(responseText) {
       throw new Error("AI response was not a JSON object");
     }
 
-    debugLog("response_parsed", {
-      hasSlots: Boolean(parsed.slots),
-      slotCount: parsed.slots ? Object.keys(parsed.slots).length : 0,
-      hasAnswer: parsed.answer !== undefined,
-      hasActions: Array.isArray(parsed.actions),
-      page: isQuizPage() ? "smartbook" : "connect",
-    });
 
     // SmartBook legacy path (multiple_choice, true_false, fill_in_the_blank).
     if (isQuizPage()) {
@@ -578,10 +542,6 @@ async function handleAiResponse(responseText) {
     const slotAnswers = extractSlotAnswers(parsed);
     const filledAny = await applySlots(slotAnswers);
 
-    debugLog("response_slots_applied", {
-      slotAnswerCount: Object.keys(slotAnswers).length,
-      filledAny,
-    });
 
     // Hand off to the navigator. The navigator decides when a tab is fully
     // answered (after the last carousel sub-problem, or after a single
@@ -972,19 +932,15 @@ function isNavigationChrome(element) {
 async function applySlots(slotAnswers) {
   let filledAny = false;
   const entries = Object.entries(slotAnswers || {});
-  debugLog("apply_slots_start", {
-    answerCount: entries.length,
-    slotMapSize: lastSlotMap.size,
-  });
 
   for (const [slotId, value] of entries) {
+    if (!isAutomating) break;
     const slot = lastSlotMap.get(slotId);
     if (!slot) {
       debugLog("apply_slot_unknown_id", { slotId, value }, "warn");
       continue;
     }
     if (value == null || (typeof value === "string" && value.trim() === "")) {
-      debugLog("apply_slot_blank", { slotId });
       continue;
     }
 
@@ -1002,7 +958,6 @@ async function applySlots(slotAnswers) {
     await delay(200);
   }
 
-  debugLog("apply_slots_complete", { filledAny });
   return filledAny;
 }
 
@@ -1088,8 +1043,8 @@ function formatNumberForCell(value) {
 // ============================================================================
 
 async function navigateForward({ filledSlots }) {
+  if (!isAutomating) return false;
   setAutomationDiagnostic(`navigate:filled=${filledSlots}`);
-  debugLog("navigate_start", { filledSlots });
 
   // 1. If we just filled slots, save in-tool first. Then decide whether the
   //    save left us with more sub-problems in the same Required tab (the
@@ -1099,22 +1054,15 @@ async function navigateForward({ filledSlots }) {
     if (saveButton) {
       const beforeActiveNumber = getActiveTransactionNumberAcrossFrames();
       const beforeActiveTab = getActiveAssessmentTabLabel();
-      debugLog("navigate_in_tool_save", {
-        saveButton,
-        beforeActiveNumber,
-        beforeActiveTab,
-      });
       clickElement(saveButton);
       await waitForInToolSaveToSettle();
+      if (!isAutomating) return false;
 
       const stillInCarousel = await advanceWithinCarouselAfterSave(
         beforeActiveNumber
       );
+      if (!isAutomating) return false;
       if (stillInCarousel) {
-        debugLog("navigate_carousel_continue", {
-          beforeActiveNumber,
-          afterActiveNumber: getActiveTransactionNumberAcrossFrames(),
-        });
         return true;
       }
 
@@ -1125,7 +1073,6 @@ async function navigateForward({ filledSlots }) {
       // (and the embedded tool's "Next" button does the same). Mark the
       // active tab answered so findNextRequiredTab doesn't loop back to it
       // when we land on the following tab.
-      debugLog("navigate_no_in_tool_save_mark_answered");
       markActiveTabAnswered();
     }
   }
@@ -1133,7 +1080,6 @@ async function navigateForward({ filledSlots }) {
   // 2. Move to the next un-visited Required tab on the current question.
   const nextTab = findNextRequiredTab();
   if (nextTab) {
-    debugLog("navigate_next_required_tab", { nextTab });
     clickElement(nextTab);
     return true;
   }
@@ -1141,7 +1087,6 @@ async function navigateForward({ filledSlots }) {
   // 3. Click main-page Next.
   const mainNext = findMainNextButton();
   if (mainNext) {
-    debugLog("navigate_main_next", { mainNext });
     clickElement(mainNext);
     if (checkForQuizEnd()) {
       stopAutomation("Quiz completed - all questions answered");
@@ -1161,7 +1106,6 @@ async function navigateForward({ filledSlots }) {
       );
       return true;
     }
-    debugLog("navigate_submit", { submit });
     clickElement(submit);
     await delay(800);
     await confirmSubmitIfPresent();
@@ -1186,6 +1130,7 @@ async function advanceWithinCarouselAfterSave(beforeActiveNumber) {
   // McGraw usually auto-advances after Record entry. Poll briefly for the
   // active transaction number to change.
   for (let i = 0; i < 10; i++) {
+    if (!isAutomating) return false;
     const currentActive = getActiveTransactionNumberAcrossFrames();
     if (currentActive != null && currentActive !== beforeActiveNumber) {
       // Only treat the carousel as "still ongoing" when active moved STRICTLY
@@ -1205,11 +1150,11 @@ async function advanceWithinCarouselAfterSave(beforeActiveNumber) {
 
   // No auto-advance. If the "Move to next transaction" arrow is enabled,
   // there's another transaction in this tab's carousel — click it.
+  if (!isAutomating) return false;
   for (const frame of getAccessibleDocuments()) {
     if (frame.frame === "main") continue;
     const arrow = findTransactionNextArrow(frame.doc);
     if (arrow) {
-      debugLog("navigate_carousel_next_arrow_click", { arrow });
       clickElement(arrow);
       await delay(400);
       return true;
@@ -1248,7 +1193,6 @@ function markActiveTabAnswered() {
   if (tab) {
     const key = normalizeComparable(tab);
     answeredTabsForCurrentQuestion.add(key);
-    debugLog("mark_active_tab_answered", { tab, key });
   }
 }
 
@@ -2133,7 +2077,6 @@ function clickElement(element) {
       ""
   ).slice(0, 120);
   const frame = element.ownerDocument === document ? "main" : "iframe";
-  debugLog("click_element", { element, text, frame });
   element.scrollIntoView({ block: "center", inline: "center" });
   element.focus?.();
   dispatchMouseSequence(element, { includeClick: false });
@@ -2142,7 +2085,6 @@ function clickElement(element) {
 
 async function fillElement(element, value) {
   const text = value == null ? "" : String(value);
-  debugLog("fill_element_start", { element, value: text });
   element.scrollIntoView({ block: "center", inline: "center" });
   element.focus?.();
 

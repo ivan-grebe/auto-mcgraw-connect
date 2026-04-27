@@ -179,7 +179,7 @@ function tryCaptureLatestResponse() {
   const latestMessage = messages[messages.length - 1];
   if (isResponseStillGenerating(latestMessage)) return;
 
-  const responseText = repairJsonResponseText(extractJsonText(latestMessage));
+  const responseText = extractJsonText(latestMessage);
   if (
     !responseText ||
     responseText === lastSentResponseText ||
@@ -220,9 +220,7 @@ function tryCaptureLatestResponse() {
     }
   } catch (error) {
     if (Date.now() - observationStartTime > 30000) {
-      const fallback = repairJsonResponseText(
-        findJsonObject(latestMessage.textContent.trim())
-      );
+      const fallback = findJsonObject(latestMessage.textContent.trim());
       if (
         fallback &&
         fallback !== lastSentResponseText &&
@@ -278,7 +276,7 @@ function getLatestAssistantResponseText() {
   if (!messages.length) return "";
 
   const latestMessage = messages[messages.length - 1];
-  return repairJsonResponseText(extractJsonText(latestMessage));
+  return extractJsonText(latestMessage);
 }
 
 function extractJsonText(message) {

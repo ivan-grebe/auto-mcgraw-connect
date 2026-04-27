@@ -106,12 +106,3 @@ function findJsonObject(text) {
 
   return value.slice(firstBrace, lastBrace + 1);
 }
-
-function repairJsonResponseText(text) {
-  return String(text || "")
-    .replace(
-      /\[data-automcgraw-id="([^"]+)"\]/g,
-      "[data-automcgraw-id='$1']"
-    )
-    .replace(/\[id="([^"]+)"\]/g, "[id='$1']");
-}

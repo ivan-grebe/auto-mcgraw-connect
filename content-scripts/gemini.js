@@ -126,11 +126,9 @@ function startObserving() {
       if (jsonMatch) responseText = jsonMatch[0];
     }
 
-    responseText = repairJsonResponseText(
-      responseText
-        .replace(/[\u200B-\u200D\uFEFF]/g, "")
-        .trim()
-    );
+    responseText = responseText
+      .replace(/[\u200B-\u200D\uFEFF]/g, "")
+      .trim();
 
     try {
       const parsed = JSON.parse(responseText);
@@ -162,7 +160,7 @@ function startObserving() {
             hasResponded = true;
             chrome.runtime.sendMessage({
               type: "geminiResponse",
-              response: repairJsonResponseText(jsonText),
+              response: jsonText,
             });
             resetObservation();
           }

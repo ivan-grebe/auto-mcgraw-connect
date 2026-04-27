@@ -180,11 +180,9 @@ async function insertQuestion(questionData) {
 }
 
 function processResponse(responseText) {
-  const cleanedText = repairJsonResponseText(
-    responseText
-      .replace(/[\u200B-\u200D\uFEFF]/g, "")
-      .trim()
-  );
+  const cleanedText = responseText
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .trim();
 
   try {
     const parsed = JSON.parse(cleanedText);
@@ -280,7 +278,7 @@ function checkForResponse() {
           hasResponded = true;
           chrome.runtime.sendMessage({
             type: "deepseekResponse",
-            response: repairJsonResponseText(jsonText),
+            response: jsonText,
           });
           resetObservation();
           return true;

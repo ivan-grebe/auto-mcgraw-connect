@@ -180,9 +180,7 @@ async function insertQuestion(questionData) {
 }
 
 function processResponse(responseText) {
-  const cleanedText = responseText
-    .replace(/[\u200B-\u200D\uFEFF]/g, "")
-    .trim();
+  const cleanedText = sanitizeResponseText(responseText);
 
   try {
     const parsed = JSON.parse(cleanedText);

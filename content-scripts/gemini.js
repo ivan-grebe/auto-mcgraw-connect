@@ -126,9 +126,7 @@ function startObserving() {
       if (jsonMatch) responseText = jsonMatch[0];
     }
 
-    responseText = responseText
-      .replace(/[\u200B-\u200D\uFEFF]/g, "")
-      .trim();
+    responseText = sanitizeResponseText(responseText);
 
     try {
       const parsed = JSON.parse(responseText);

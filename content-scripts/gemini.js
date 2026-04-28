@@ -155,15 +155,15 @@ function startObserving() {
         const responseText = latestMessage.textContent.trim();
         try {
           const jsonText = findJsonObject(responseText);
-
-          if (jsonText && !hasResponded) {
-            hasResponded = true;
-            chrome.runtime.sendMessage({
-              type: "geminiResponse",
-              response: jsonText,
-            });
-            resetObservation();
-          }
+          if (!jsonText || hasResponded) return;
+          const parsed = JSON.parse(jsonText);
+          if (parsed.answer === undefined && !parsed.slots) return;
+          hasResponded = true;
+          chrome.runtime.sendMessage({
+            type: "geminiResponse",
+            response: jsonText,
+          });
+          resetObservation();
         } catch (e) {}
       }
     }

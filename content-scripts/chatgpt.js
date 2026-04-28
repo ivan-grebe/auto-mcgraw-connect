@@ -222,27 +222,37 @@ function tryCaptureLatestResponse() {
     if (Date.now() - observationStartTime > 30000) {
       const fallback = findJsonObject(latestMessage.textContent.trim());
       if (
-        fallback &&
-        fallback !== lastSentResponseText &&
-        fallback !== assistantTextAtQuestion
+        !fallback ||
+        fallback === lastSentResponseText ||
+        fallback === assistantTextAtQuestion
       ) {
-        responseInFlight = true;
-        hasResponded = true;
-        chrome.runtime
-          .sendMessage({
-            type: "chatGPTResponse",
-            response: fallback,
-          })
-          .then(() => {
-            lastSentResponseText = fallback;
-            resetObservation();
-          })
-          .catch((sendError) => {
-            responseInFlight = false;
-            hasResponded = false;
-            console.error("Error sending fallback response:", sendError);
-          });
+        return;
       }
+      let fallbackParsed;
+      try {
+        fallbackParsed = JSON.parse(fallback);
+      } catch (_) {
+        return;
+      }
+      if (fallbackParsed.answer === undefined && !fallbackParsed.slots) {
+        return;
+      }
+      responseInFlight = true;
+      hasResponded = true;
+      chrome.runtime
+        .sendMessage({
+          type: "chatGPTResponse",
+          response: fallback,
+        })
+        .then(() => {
+          lastSentResponseText = fallback;
+          resetObservation();
+        })
+        .catch((sendError) => {
+          responseInFlight = false;
+          hasResponded = false;
+          console.error("Error sending fallback response:", sendError);
+        });
     }
   }
 }

@@ -273,16 +273,16 @@ function checkForResponse() {
     if (Date.now() - observationStartTime > 30000) {
       try {
         const jsonText = findJsonObject(messageText);
-
-        if (jsonText && !hasResponded) {
-          hasResponded = true;
-          chrome.runtime.sendMessage({
-            type: "deepseekResponse",
-            response: jsonText,
-          });
-          resetObservation();
-          return true;
-        }
+        if (!jsonText || hasResponded) continue;
+        const parsed = JSON.parse(jsonText);
+        if (parsed.answer === undefined && !parsed.slots) continue;
+        hasResponded = true;
+        chrome.runtime.sendMessage({
+          type: "deepseekResponse",
+          response: jsonText,
+        });
+        resetObservation();
+        return true;
       } catch (e) {}
     }
   }

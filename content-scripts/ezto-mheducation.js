@@ -570,8 +570,13 @@ function extractSlotAnswers(parsed) {
   if (parsed.slots && typeof parsed.slots === "object") {
     return parsed.slots;
   }
-  // Tolerate older response shapes: {answer: {label1: value1, ...}}.
+  // Tolerate older response shapes: {answer: {label1: value1, ...}}. The new
+  // prompt forbids this — if we hit this branch, the AI ignored the contract.
   if (parsed.answer && typeof parsed.answer === "object" && !Array.isArray(parsed.answer)) {
+    console.warn(
+      "[AutoMcGraw] AI returned answer-object shape instead of slots; coercing",
+      parsed.answer
+    );
     return parsed.answer;
   }
   // Tolerate {answer: "single value"} when there is exactly one slot.
@@ -579,6 +584,10 @@ function extractSlotAnswers(parsed) {
     typeof parsed.answer === "string" &&
     lastSlotMap.size === 1
   ) {
+    console.warn(
+      "[AutoMcGraw] AI returned answer-string shape instead of slots; coercing to single slot",
+      parsed.answer
+    );
     const onlyId = lastSlotMap.keys().next().value;
     return { [onlyId]: parsed.answer };
   }

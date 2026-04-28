@@ -1,6 +1,6 @@
 <div align="center">
 
-# Auto-McGraw (Smartbook)
+# Auto-McGraw (Smartbook + Connect)
 
 <img src="assets/icon.png" alt="Auto-McGraw Logo" width="200">
 

@@ -526,9 +526,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === "clearBackgroundDebugLogs") {
     chrome.storage.local.set({ [BG_DEBUG_LOG_KEY]: [] }, () => {
-      debugLog("background_debug_logs_cleared", {
-        reason: message.reason || "message",
-      });
       sendResponse({ received: true });
     });
     return true;

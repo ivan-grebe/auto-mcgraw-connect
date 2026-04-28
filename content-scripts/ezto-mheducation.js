@@ -95,7 +95,7 @@ function getDebugLogs() {
   }
 }
 
-function clearDebugLogs(reason = "manual") {
+function clearDebugLogs() {
   try {
     window.__automcgrawDebugLogs = [];
     localStorage.removeItem(DEBUG_LOG_KEY);
@@ -195,7 +195,7 @@ function setupMessageListener() {
     }
 
     if (message.type === "clearDebugLogs") {
-      clearDebugLogs(message.reason || "message");
+      clearDebugLogs();
       sendResponse({ received: true });
       return true;
     }

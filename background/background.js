@@ -442,6 +442,25 @@ async function processAiResponseTimeout(message) {
   }
 }
 
+async function cancelAiResponseTimeout(message) {
+  try {
+    debugLog("cancel_ai_response_timeout", { aiModel: message?.aiModel });
+    if (!aiTabId) {
+      await findAndStoreTabs(message?.aiModel);
+    }
+    if (!aiTabId) return;
+
+    await sendMessageWithRetry(
+      aiTabId,
+      { type: "cancelResponseObservation" },
+      1,
+      300
+    );
+  } catch (error) {
+    debugLog("cancel_ai_response_timeout_error", { error }, "error");
+  }
+}
+
 async function waitForTabReady(tabId, maxAttempts = 8) {
   debugLog("wait_for_tab_ready_start", { tabId, maxAttempts });
   for (let i = 0; i < maxAttempts; i++) {
@@ -549,6 +568,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === "aiResponseTimeout") {
     processAiResponseTimeout(message);
+    sendResponse({ received: true });
+    return true;
+  }
+
+  if (message.type === "cancelAiResponseTimeout") {
+    cancelAiResponseTimeout(message);
     sendResponse({ received: true });
     return true;
   }

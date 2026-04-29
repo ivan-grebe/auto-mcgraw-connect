@@ -16,6 +16,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "cancelResponseObservation") {
+    resetObservation();
+    sendResponse({ received: true });
+    return true;
+  }
+
   if (message.type === "receiveQuestion") {
     resetObservation();
 

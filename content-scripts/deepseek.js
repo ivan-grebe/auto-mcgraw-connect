@@ -114,6 +114,12 @@ function updateChatInputValue(chatInput, text) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "cancelResponseObservation") {
+    resetObservation();
+    sendResponse({ received: true });
+    return true;
+  }
+
   if (message.type === "receiveQuestion") {
     resetObservation();
 

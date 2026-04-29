@@ -399,6 +399,8 @@ function getDisableAutoSubmit() {
 
 function stopAutomation(reason = "Quiz completed") {
   debugLog("automation_stop", { reason });
+  const hadPendingAiResponse = awaitingAiResponse || processingAiResponse;
+
   isAutomating = false;
   awaitingAiResponse = false;
   processingAiResponse = false;
@@ -408,6 +410,12 @@ function stopAutomation(reason = "Quiz completed") {
 
   const btn = document.querySelector(".header__automcgraw--main");
   if (btn) btn.textContent = "Ask AI";
+
+  if (hadPendingAiResponse) {
+    try {
+      chrome.runtime.sendMessage({ type: "cancelAiResponseTimeout" });
+    } catch (error) {}
+  }
 
   if (reason) alert(`Automation stopped: ${reason}`);
 }
@@ -445,6 +453,19 @@ async function checkForNextStep() {
 
   // Connect path: build slot graph snapshot.
   await delay(800); // settle buffer for embedded tools
+
+  // If the embedded tool is showing the transaction-list view, flip to the
+  // journal entry worksheet first. Snapshotting the transaction list picks
+  // up the wrong controls and the navigator clicks misfire.
+  const worksheetButton = findJournalEntryWorksheetButton();
+  if (worksheetButton) {
+    debugLog("journal_worksheet_view_click");
+    clickElement(worksheetButton);
+    consecutiveEmptySnapshots = 0;
+    setTimeout(() => checkForNextStep(), 1500);
+    return;
+  }
+
   const snapshot = await buildSlotGraphSnapshot();
 
   if (!snapshot || !snapshot.slots.length) {
@@ -538,6 +559,8 @@ async function handleAiResponse(responseText) {
     const slotAnswers = extractSlotAnswers(parsed);
     const filledAny = await applySlots(slotAnswers);
 
+    // If stop was hit mid-apply, don't let the navigator fire a trailing click.
+    if (!isAutomating) return;
 
     // Hand off to the navigator. The navigator decides when a tab is fully
     // answered (after the last carousel sub-problem, or after a single
@@ -1221,6 +1244,32 @@ function findInToolSaveButton() {
   return null;
 }
 
+function findJournalEntryWorksheetButton() {
+  for (const frame of getAccessibleDocuments()) {
+    if (frame.frame === "main") continue;
+
+    const candidates = [
+      frame.doc.querySelector("#viewGJ"),
+      ...Array.from(
+        frame.doc.querySelectorAll(
+          "button, input[type='button'], [role='button']"
+        )
+      ),
+    ].filter(Boolean);
+
+    const match = candidates.find((element) => {
+      if (!isElementVisibleEnough(element)) return false;
+      if (isDisabledControl(element)) return false;
+      const text = normalizeWhitespace(
+        element.value || element.innerText || element.textContent || ""
+      );
+      return /^view\s+journal\s+entry\s+worksheet$/i.test(text);
+    });
+    if (match) return match;
+  }
+  return null;
+}
+
 function findSetupRevealButton() {
   // Buttons that reveal the actual answer editor — clicking them is
   // deterministic when the snapshot turns up zero slots.
@@ -1241,7 +1290,6 @@ function findSetupRevealButton() {
       const text = getControlText(element);
       return (
         /\bedit\b.*\bworksheet\b/i.test(text) ||
-        /\bview\b.*\bjournal entry worksheet\b/i.test(text) ||
         /\bopen\b.*\bworksheet\b/i.test(text) ||
         /\badd\b.*\b(transaction|entry|row|requirement)\b/i.test(text)
       );

@@ -958,7 +958,12 @@ function isNavigationChrome(element) {
 
 async function applySlots(slotAnswers) {
   let filledAny = false;
+  let appliedCount = 0;
   const entries = Object.entries(slotAnswers || {});
+  debugLog("apply_slots_start", {
+    count: entries.length,
+    slotIds: entries.map(([id]) => id),
+  });
 
   for (const [slotId, value] of entries) {
     if (!isAutomating) break;
@@ -975,6 +980,7 @@ async function applySlots(slotAnswers) {
       setAutomationDiagnostic(`apply:${slotId}:${slot.kind}`);
       await applySlot(slot, value);
       filledAny = true;
+      appliedCount++;
     } catch (error) {
       debugLog(
         "apply_slot_error",
@@ -985,6 +991,7 @@ async function applySlots(slotAnswers) {
     await delay(200);
   }
 
+  debugLog("apply_slots_done", { appliedCount, filledAny });
   return filledAny;
 }
 
@@ -1072,6 +1079,13 @@ function formatNumberForCell(value) {
 async function navigateForward({ filledSlots }) {
   if (!isAutomating) return false;
   setAutomationDiagnostic(`navigate:filled=${filledSlots}`);
+  debugLog("navigate_start", {
+    filledSlots,
+    activeTab: getActiveAssessmentTabLabel(),
+    visibleTabs: getVisibleAssessmentTabLabels(),
+    answeredTabs: Array.from(answeredTabsForCurrentQuestion),
+    questionNumber: getCurrentQuestionNumber(),
+  });
 
   // 1. If we just filled slots, save in-tool first. Then decide whether the
   //    save left us with more sub-problems in the same Required tab (the
@@ -1080,6 +1094,7 @@ async function navigateForward({ filledSlots }) {
     const saveButton = findInToolSaveButton();
     if (saveButton) {
       const beforeActiveNumber = getActiveTransactionNumberAcrossFrames();
+      debugLog("navigate_save_click", { beforeActiveNumber });
       clickElement(saveButton);
       await waitForInToolSaveToSettle();
       if (!isAutomating) return false;
@@ -1087,6 +1102,11 @@ async function navigateForward({ filledSlots }) {
       const stillInCarousel = await advanceWithinCarouselAfterSave(
         beforeActiveNumber
       );
+      debugLog("navigate_carousel_decision", {
+        beforeActiveNumber,
+        afterActiveNumber: getActiveTransactionNumberAcrossFrames(),
+        stillInCarousel,
+      });
       if (!isAutomating) return false;
       if (stillInCarousel) {
         return true;
@@ -1095,6 +1115,7 @@ async function navigateForward({ filledSlots }) {
       // Carousel exhausted (or no carousel at all) — this tab's work is done.
       markActiveTabAnswered();
     } else {
+      debugLog("navigate_no_save_button");
       // No in-tool save button on this tab — McGraw auto-saves on tab switch
       // (and the embedded tool's "Next" button does the same). Mark the
       // active tab answered so findNextRequiredTab doesn't loop back to it
@@ -1106,6 +1127,10 @@ async function navigateForward({ filledSlots }) {
   // 2. Move to the next un-visited Required tab on the current question.
   const nextTab = findNextRequiredTab();
   if (nextTab) {
+    debugLog("navigate_next_tab_click", {
+      nextTabLabel: getAssessmentTabLabel(nextTab),
+      answeredTabs: Array.from(answeredTabsForCurrentQuestion),
+    });
     clickElement(nextTab);
     return true;
   }
@@ -1113,6 +1138,10 @@ async function navigateForward({ filledSlots }) {
   // 3. Click main-page Next.
   const mainNext = findMainNextButton();
   if (mainNext) {
+    debugLog("navigate_main_next_click", {
+      answeredTabs: Array.from(answeredTabsForCurrentQuestion),
+      visibleTabs: getVisibleAssessmentTabLabels(),
+    });
     clickElement(mainNext);
     if (checkForQuizEnd()) {
       stopAutomation("Quiz completed - all questions answered");
@@ -1158,18 +1187,20 @@ async function advanceWithinCarouselAfterSave(beforeActiveNumber) {
   for (let i = 0; i < 10; i++) {
     if (!isAutomating) return false;
     const currentActive = getActiveTransactionNumberAcrossFrames();
-    if (currentActive != null && currentActive !== beforeActiveNumber) {
-      // Only treat the carousel as "still ongoing" when active moved STRICTLY
-      // FORWARD and the new active is un-entered. A backwards jump (McGraw
-      // bouncing to a recorded transaction after the last save) means we are
-      // done with this tab's sub-problems.
-      if (
-        currentActive > beforeActiveNumber &&
-        activeTransactionIsUnentered()
-      ) {
-        return true;
-      }
-      return false;
+    if (currentActive != null && currentActive > beforeActiveNumber) {
+      // Forward advance = McGraw moved us to the next sub-problem. Trust
+      // the index move alone; the "not yet entered" annotation isn't always
+      // populated by the first poll after save.
+      const unentered = activeTransactionIsUnentered();
+      const activeText = getActiveTransactionAnnotationText();
+      debugLog("carousel_advance_observed", {
+        beforeActiveNumber,
+        currentActive,
+        unentered,
+        activeText,
+        pollIteration: i,
+      });
+      return true;
     }
     await delay(150);
   }
@@ -1200,6 +1231,16 @@ function getActiveTransactionNumberAcrossFrames() {
   return null;
 }
 
+function getActiveTransactionAnnotationText() {
+  for (const frame of getAccessibleDocuments()) {
+    if (frame.frame === "main") continue;
+    const active = getActiveTransactionButton(frame.doc);
+    if (!active) continue;
+    return getControlText(active, { preferAriaLabel: true });
+  }
+  return null;
+}
+
 function activeTransactionIsUnentered() {
   for (const frame of getAccessibleDocuments()) {
     if (frame.frame === "main") continue;
@@ -1219,6 +1260,16 @@ function markActiveTabAnswered() {
   if (tab) {
     const key = normalizeComparable(tab);
     answeredTabsForCurrentQuestion.add(key);
+    debugLog("mark_tab_answered", {
+      tab,
+      answeredTabs: Array.from(answeredTabsForCurrentQuestion),
+    });
+  } else {
+    debugLog(
+      "mark_tab_answered_no_active",
+      { visibleTabs: getVisibleAssessmentTabLabels() },
+      "warn"
+    );
   }
 }
 

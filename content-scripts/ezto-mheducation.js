@@ -348,7 +348,7 @@ function checkForQuizEnd() {
 }
 
 function isAssignmentSubmittedPage() {
-  return /you(?:'|\u2019|&rsquo;|\u00e2\u20ac\u2122)re done!\s+you submitted this assignment/i.test(
+  return /you(?:'|’|&rsquo;)re done!\s+you submitted this assignment/i.test(
     document.body?.innerText || "",
   );
 }

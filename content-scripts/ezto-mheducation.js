@@ -1122,6 +1122,12 @@ async function navigateForward({ filledSlots }) {
       // when we land on the following tab.
       markActiveTabAnswered();
     }
+  } else {
+    // Fall-through from the zero-snapshot path: this tab has no fillable
+    // slots (Requirement / auto-populated Ledger / etc.). Mark it answered
+    // so the navigator doesn't oscillate back to it after visiting another
+    // empty tab.
+    markActiveTabAnswered();
   }
 
   // 2. Move to the next un-visited Required tab on the current question.

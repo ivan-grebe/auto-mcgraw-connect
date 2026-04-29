@@ -1,7 +1,3 @@
-// Shared helpers for the AI provider content scripts (chatgpt / gemini /
-// deepseek). Injected before each provider script via the manifest, so the
-// functions defined here are available in the provider's global scope.
-
 function buildPrompt(questionData) {
   if (questionData.type === "connect_slot_graph") {
     return buildSlotGraphPrompt(questionData);
@@ -19,7 +15,7 @@ function buildPrompt(questionData) {
       `CORRECTION FROM PREVIOUS ANSWER: For the question "${
         previousCorrection.question
       }", your answer was incorrect. The correct answer was: ${JSON.stringify(
-        previousCorrection.correctAnswer
+        previousCorrection.correctAnswer,
       )}\n\nNow answer this new question:\n\n` + text;
   }
 
@@ -31,7 +27,7 @@ function buildPrompt(questionData) {
       "\nChoices:\n" +
       options.choices.map((choice, i) => `${i + 1}. ${choice}`).join("\n");
     text +=
-      '\n\nPlease match each prompt with the correct choice. Set "answer" to an array of strings using the exact format \'Prompt -> Choice\'. Include one entry per prompt, use exact prompt and choice text, and use each choice at most once.';
+      "\n\nPlease match each prompt with the correct choice. Set \"answer\" to an array of strings using the exact format 'Prompt -> Choice'. Include one entry per prompt, use exact prompt and choice text, and use each choice at most once.";
   } else if (type === "fill_in_the_blank") {
     text +=
       "\n\nThis is a fill in the blank question. If there are multiple blanks, provide answers as an array in order of appearance. For a single blank, you can provide a string.";
@@ -61,17 +57,17 @@ function buildSlotGraphPrompt(questionData) {
   text += `\n\nFillable slots (you must return a value for each slot you can answer):\n${JSON.stringify(
     slotList,
     null,
-    2
+    2,
   )}`;
 
   text += `\n\nReturn JSON of the form: {"slots": {"<slot id>": <value>, ...}, "explanation": "<one sentence>"}`;
-  text += `\n\nReturn only the raw JSON object — no markdown fences, no acknowledgements, no prose outside the JSON.`;
+  text += `\n\nReturn only the raw JSON object - no markdown fences, no acknowledgements, no prose outside the JSON.`;
   text += `\n\nRules:`;
   text += `\n- Use the exact slot ids from the slots list as the keys.`;
   text += `\n- For dropdown slots, the value must be EXACTLY one of the option strings shown in that slot's "options".`;
   text += `\n- For choice / boolean slots (single selection), the value is the exact option string you want to pick.`;
   text += `\n- For multi_choice slots, the value is an array of exact option strings.`;
-  text += `\n- For number slots, write the number as you would type it. For NEGATIVE numbers in McGraw's accounting cells, use parentheses, e.g. "(4,976)" — McGraw stores negatives that way.`;
+  text += `\n- For number slots, write the number as you would type it. For NEGATIVE numbers in McGraw's accounting cells, use parentheses, e.g. "(4,976)" - McGraw stores negatives that way.`;
   text += `\n- For text slots, write the natural-language answer as a string.`;
   text += `\n- If a slot has no answer (truly blank cell), omit it or set its value to null. Do not invent values.`;
   text += `\n- Use slot "hint", "group", and "groupRole" to keep paired cells (label/amount, debit/credit, row 1/row 2) consistent.`;
@@ -88,9 +84,7 @@ function sanitizeResponseText(text) {
 
 function looksLikeJsonResponse(text) {
   return (
-    text.startsWith("{") &&
-    text.endsWith("}") &&
-    /"answer"|"slots"/.test(text)
+    text.startsWith("{") && text.endsWith("}") && /"answer"|"slots"/.test(text)
   );
 }
 

@@ -1,20 +1,6 @@
-// ============================================================================
-// Auto-McGraw — Connect / EZTo content script
-//
-// Architecture: slot-graph.
-//
-// The page-side owns all DOM knowledge. It snapshots the active subunit as a
-// graph of fillable slots — each slot describes WHAT to fill (kind, label,
-// options, hint) but never exposes a selector. The AI receives only the slot
-// graph and replies with {slots: {id: value}}. The page-side then applies
-// each value through its private slot map and runs a deterministic navigator
-// to advance: in-tool save → next transaction → next required tab → main
-// Next → final Submit.
-//
-// This keeps the AI's job to "know the answer." Action sanitization, premature
-// Submit guards, and worksheet label/amount pairing all disappear because the
-// AI never gets to drive the DOM.
-// ============================================================================
+// Auto-McGraw Connect content script.
+// The page snapshots fillable slots, the AI returns values by slot id, and the
+// page applies those values before navigating forward.
 
 let messageListener = null;
 let isAutomating = false;
@@ -42,9 +28,7 @@ const DEFAULT_AI_MODEL = "chatgpt";
 document.documentElement.setAttribute("data-automcgraw-ezto-loaded", "true");
 window.__automcgrawDebugLogs = window.__automcgrawDebugLogs || [];
 
-// ============================================================================
 // Debug logging
-// ============================================================================
 
 function debugLog(event, details = {}, level = "debug") {
   const entry = {
@@ -66,9 +50,8 @@ function debugLog(event, details = {}, level = "debug") {
 function appendDebugEntry(entry) {
   try {
     window.__automcgrawDebugLogs.push(entry);
-    window.__automcgrawDebugLogs = window.__automcgrawDebugLogs.slice(
-      -DEBUG_MAX_LOGS
-    );
+    window.__automcgrawDebugLogs =
+      window.__automcgrawDebugLogs.slice(-DEBUG_MAX_LOGS);
   } catch (error) {}
 
   try {
@@ -76,14 +59,14 @@ function appendDebugEntry(entry) {
     existing.push(entry);
     localStorage.setItem(
       DEBUG_LOG_KEY,
-      JSON.stringify(existing.slice(-DEBUG_MAX_LOGS))
+      JSON.stringify(existing.slice(-DEBUG_MAX_LOGS)),
     );
   } catch (error) {}
 
   try {
     document.documentElement.setAttribute(
       "data-automcgraw-last-debug",
-      `${entry.ts} ${entry.event}`
+      `${entry.ts} ${entry.event}`,
     );
   } catch (error) {}
 }
@@ -108,8 +91,9 @@ function getDebugPageState() {
     title: document.title,
     url: location.href,
     button:
-      document.querySelector(".header__automcgraw--main")?.textContent?.trim() ||
-      "",
+      document
+        .querySelector(".header__automcgraw--main")
+        ?.textContent?.trim() || "",
     progress:
       document.querySelector(".footer__progress__heading")?.innerText?.trim() ||
       "",
@@ -123,7 +107,11 @@ function getDebugPageState() {
 
 function sanitizeDebugValue(value, depth = 0) {
   if (depth > 4) return "[depth-limit]";
-  if (value == null || typeof value === "number" || typeof value === "boolean") {
+  if (
+    value == null ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
     return value;
   }
   if (typeof value === "string") {
@@ -140,7 +128,9 @@ function sanitizeDebugValue(value, depth = 0) {
     return describeElementForDebug(value);
   }
   if (Array.isArray(value)) {
-    return value.slice(0, 80).map((item) => sanitizeDebugValue(item, depth + 1));
+    return value
+      .slice(0, 80)
+      .map((item) => sanitizeDebugValue(item, depth + 1));
   }
   if (typeof value === "object") {
     const result = {};
@@ -161,7 +151,7 @@ function describeElementForDebug(element) {
     className: String(element.className || ""),
     slot: element.getAttribute(SLOT_ATTR) || "",
     text: normalizeWhitespace(
-      element.innerText || element.textContent || element.value || ""
+      element.innerText || element.textContent || element.value || "",
     ).slice(0, 500),
     label: element.getAttribute("aria-label") || "",
     visible: isElementVisibleEnough(element),
@@ -174,9 +164,7 @@ debugLog("content_script_loaded", {
   href: location.href,
 });
 
-// ============================================================================
 // Message listener + debug bridge
-// ============================================================================
 
 function setupMessageListener() {
   if (messageListener) {
@@ -184,7 +172,6 @@ function setupMessageListener() {
   }
 
   messageListener = (message, sender, sendResponse) => {
-
     if (message.type === "ping") {
       sendResponse({ received: true });
       return true;
@@ -261,7 +248,7 @@ function setupDebugBridge() {
             payload.backgroundError = chrome.runtime.lastError.message;
           } else if (!response?.received) {
             payload.backgroundError = `Unexpected background response: ${JSON.stringify(
-              response
+              response,
             )}`;
           } else {
             payload.backgroundLogs = Array.isArray(response?.logs)
@@ -269,7 +256,7 @@ function setupDebugBridge() {
               : [];
           }
           window.postMessage(payload, "*");
-        }
+        },
       );
     } catch (error) {
       payload.backgroundError = error.message;
@@ -280,9 +267,7 @@ function setupDebugBridge() {
 
 setupDebugBridge();
 
-// ============================================================================
 // Page detection + button injection
-// ============================================================================
 
 function isTopWindow() {
   try {
@@ -304,10 +289,10 @@ function isQuizPage() {
 function isConnectAssignmentPage() {
   return Boolean(
     document.querySelector(".question-wrap") ||
-      document.querySelector(".worksheet-wrap") ||
-      document.querySelector("iframe[title*='Assessment']") ||
-      document.querySelector(".footer__navigation--wrap") ||
-      document.querySelector(".header__exits")
+    document.querySelector(".worksheet-wrap") ||
+    document.querySelector("iframe[title*='Assessment']") ||
+    document.querySelector(".footer__navigation--wrap") ||
+    document.querySelector(".header__exits"),
   );
 }
 
@@ -364,7 +349,7 @@ function checkForQuizEnd() {
 
 function isAssignmentSubmittedPage() {
   return /you(?:'|’|&rsquo;)re done!\s+you submitted this assignment/i.test(
-    document.body?.innerText || ""
+    document.body?.innerText || "",
   );
 }
 
@@ -394,9 +379,7 @@ function getDisableAutoSubmit() {
   });
 }
 
-// ============================================================================
 // Top-level flow
-// ============================================================================
 
 function stopAutomation(reason = "Quiz completed") {
   debugLog("automation_stop", { reason });
@@ -434,14 +417,12 @@ async function checkForNextStep() {
 
   await waitForConnectContentReady();
 
-  // Reset per-question scratch when the question number rolls over.
   const questionNumber = getCurrentQuestionNumber() || getProgress()?.current;
   if (questionNumber && questionNumber !== lastVisitedQuestionNumber) {
     lastVisitedQuestionNumber = questionNumber;
     answeredTabsForCurrentQuestion = new Set();
   }
 
-  // SmartBook quiz path (legacy, simple).
   if (isQuizPage()) {
     const questionData = parseQuestion();
     if (!questionData) {
@@ -452,12 +433,8 @@ async function checkForNextStep() {
     return;
   }
 
-  // Connect path: build slot graph snapshot.
-  await delay(800); // settle buffer for embedded tools
+  await delay(800);
 
-  // If the embedded tool is showing the transaction-list view, flip to the
-  // journal entry worksheet first. Snapshotting the transaction list picks
-  // up the wrong controls and the navigator clicks misfire.
   const worksheetButton = findJournalEntryWorksheetButton();
   if (worksheetButton) {
     debugLog("journal_worksheet_view_click");
@@ -472,15 +449,11 @@ async function checkForNextStep() {
   if (!snapshot || !snapshot.slots.length) {
     consecutiveEmptySnapshots++;
 
-    // 1. Re-snapshot first — embedded tools sometimes briefly render no
-    //    controls between sub-problems or right after Record entry.
     if (consecutiveEmptySnapshots < MAX_EMPTY_SNAPSHOTS) {
       setTimeout(() => checkForNextStep(), 1500);
       return;
     }
 
-    // 2. Persistent empty: try clicking a setup-reveal button (Edit
-    //    worksheet, Add transaction, etc.).
     const setupButton = findSetupRevealButton();
     if (setupButton && consecutiveSetupClicks < MAX_SETUP_CLICKS) {
       consecutiveSetupClicks++;
@@ -490,7 +463,6 @@ async function checkForNextStep() {
       return;
     }
 
-    // 3. Try to navigate forward (next tab → main Next → submit).
     const advanced = await navigateForward({ filledSlots: false });
     if (advanced) {
       consecutiveEmptySnapshots = 0;
@@ -524,11 +496,13 @@ function sendToAi(question) {
           debugLog(
             "send_to_ai_failed",
             { error: chrome.runtime.lastError?.message || "", response },
-            "error"
+            "error",
           );
-          stopAutomation("Could not send question to the selected AI assistant");
+          stopAutomation(
+            "Could not send question to the selected AI assistant",
+          );
         }
-      }
+      },
     );
   });
 }
@@ -548,24 +522,17 @@ async function handleAiResponse(responseText) {
       throw new Error("AI response was not a JSON object");
     }
 
-
-    // SmartBook legacy path (multiple_choice, true_false, fill_in_the_blank).
     if (isQuizPage()) {
       await applyLegacySmartBookAnswer(parsed.answer);
       await continueSmartBookAfterAnswer();
       return;
     }
 
-    // Connect slot-graph path.
     const slotAnswers = extractSlotAnswers(parsed);
     const { filledAny, errored } = await applySlots(slotAnswers);
 
-    // If stop was hit mid-apply, don't let the navigator fire a trailing click.
     if (!isAutomating) return;
 
-    // Apply errored on every slot (typically because an earlier value rebuilt
-    // the DOM and stripped our slot tags). Re-snapshot so the next request
-    // sees the rebuilt graph. Bounded so a genuinely stuck state can't loop.
     if (errored && !filledAny) {
       consecutiveApplyErrorCycles++;
       if (consecutiveApplyErrorCycles < 3) {
@@ -578,16 +545,13 @@ async function handleAiResponse(responseText) {
       debugLog(
         "apply_errors_exceeded_retries",
         { consecutiveApplyErrorCycles },
-        "warn"
+        "warn",
       );
       consecutiveApplyErrorCycles = 0;
     } else {
       consecutiveApplyErrorCycles = 0;
     }
 
-    // Hand off to the navigator. The navigator decides when a tab is fully
-    // answered (after the last carousel sub-problem, or after a single
-    // fill+save when there is no carousel).
     await navigateForward({ filledSlots: filledAny });
     setTimeout(() => {
       if (isAutomating) checkForNextStep();
@@ -597,9 +561,7 @@ async function handleAiResponse(responseText) {
   }
 }
 
-// ============================================================================
 // JSON response parsing
-// ============================================================================
 
 function parseJsonResponse(responseText) {
   if (typeof responseText !== "string") return responseText;
@@ -616,23 +578,21 @@ function extractSlotAnswers(parsed) {
   if (parsed.slots && typeof parsed.slots === "object") {
     return parsed.slots;
   }
-  // Tolerate older response shapes: {answer: {label1: value1, ...}}. The new
-  // prompt forbids this — if we hit this branch, the AI ignored the contract.
-  if (parsed.answer && typeof parsed.answer === "object" && !Array.isArray(parsed.answer)) {
+  if (
+    parsed.answer &&
+    typeof parsed.answer === "object" &&
+    !Array.isArray(parsed.answer)
+  ) {
     console.warn(
       "[AutoMcGraw] AI returned answer-object shape instead of slots; coercing",
-      parsed.answer
+      parsed.answer,
     );
     return parsed.answer;
   }
-  // Tolerate {answer: "single value"} when there is exactly one slot.
-  if (
-    typeof parsed.answer === "string" &&
-    lastSlotMap.size === 1
-  ) {
+  if (typeof parsed.answer === "string" && lastSlotMap.size === 1) {
     console.warn(
       "[AutoMcGraw] AI returned answer-string shape instead of slots; coercing to single slot",
-      parsed.answer
+      parsed.answer,
     );
     const onlyId = lastSlotMap.keys().next().value;
     return { [onlyId]: parsed.answer };
@@ -640,12 +600,9 @@ function extractSlotAnswers(parsed) {
   return {};
 }
 
-// ============================================================================
 // Slot graph builder
-// ============================================================================
 
 async function buildSlotGraphSnapshot() {
-  // Reset slot state for this snapshot.
   lastSlotMap = new Map();
   slotIdCounter = 1;
   clearStaleSlotAttributes();
@@ -662,9 +619,7 @@ async function buildSlotGraphSnapshot() {
 
   const promptText = extractQuestionPrompt(frames) || pageText.slice(0, 4000);
 
-  // Collect candidate elements first; group radios/checkboxes by name; then
-  // describe each unique slot.
-  const radioGroups = new Map(); // key: `${frame}|${name}` -> {kind, name, radios[], frame}
+  const radioGroups = new Map();
   const candidates = [];
 
   for (const frame of frames) {
@@ -701,7 +656,6 @@ async function buildSlotGraphSnapshot() {
 
   const slots = [];
 
-  // Emit one slot per radio/checkbox group.
   for (const [, group] of radioGroups) {
     const slot = describeChoiceGroup(group);
     if (slot) {
@@ -710,7 +664,6 @@ async function buildSlotGraphSnapshot() {
     }
   }
 
-  // Emit slots for the remaining candidates.
   for (const { element, frame } of candidates) {
     if (slots.length >= MAX_SLOTS) break;
     const slot = await describeSingleSlot(element, frame);
@@ -740,15 +693,13 @@ function clearStaleSlotAttributes() {
 }
 
 function extractQuestionPrompt(frames) {
-  // Prefer the main page's `.question-wrap` text; fall back to the first
-  // visible iframe's intro text.
   const mainFrame = frames.find((f) => f.frame === "main");
   if (mainFrame) {
     const wrap = mainFrame.doc.querySelector(".question-wrap, .question");
     if (wrap) {
       return limitText(
         normalizeWhitespace(wrap.innerText || wrap.textContent || ""),
-        4000
+        4000,
       );
     }
   }
@@ -756,9 +707,9 @@ function extractQuestionPrompt(frames) {
   if (embedded) {
     return limitText(
       normalizeWhitespace(
-        embedded.doc.body?.innerText || embedded.doc.body?.textContent || ""
+        embedded.doc.body?.innerText || embedded.doc.body?.textContent || "",
       ),
-      4000
+      4000,
     );
   }
   return "";
@@ -779,12 +730,11 @@ async function describeSingleSlot(element, frame) {
     kind = "dropdown";
     options = await getOptionsForControl(element, frame.doc);
   } else if (isSpreadsheetFillCell(element)) {
-    // Numeric vs text — we don't always know, so report "number" if the
-    // column header looks numeric, else "text".
     const headerText = cellContext?.headerText || "";
-    const looksNumeric = /\b(amount|debit|credit|balance|total|price|cost|quantity|qty|value)\b/i.test(
-      headerText
-    );
+    const looksNumeric =
+      /\b(amount|debit|credit|balance|total|price|cost|quantity|qty|value)\b/i.test(
+        headerText,
+      );
     kind = looksNumeric ? "number" : "text";
   } else if (tag === "textarea") {
     kind = "text";
@@ -794,14 +744,11 @@ async function describeSingleSlot(element, frame) {
   } else if (element.isContentEditable) {
     kind = "text";
   } else {
-    // Plain button / link with no options — treat as a click-only "action"
-    // slot only if it looks like an answer choice button (rare). Otherwise
-    // skip; the navigator handles plain buttons.
     return null;
   }
 
   const text = normalizeWhitespace(
-    element.innerText || element.textContent || element.value || ""
+    element.innerText || element.textContent || element.value || "",
   );
   const label = getElementLabel(element);
   const nearbyText = getNearbyText(element);
@@ -840,15 +787,15 @@ function describeChoiceGroup(group) {
   const options = choices.map((c) => c.value).filter(Boolean);
   if (!options.length) return null;
 
-  // Build a label / hint from the surrounding fieldset or first ancestor
-  // that contains a question-ish text.
   const sample = items[0];
-  const fieldset = sample.closest("fieldset, [role='radiogroup'], .question, .question-wrap");
+  const fieldset = sample.closest(
+    "fieldset, [role='radiogroup'], .question, .question-wrap",
+  );
   const label = fieldset
     ? normalizeWhitespace(
         fieldset.querySelector("legend, .question-prompt")?.innerText ||
           fieldset.querySelector("legend, .question-prompt")?.textContent ||
-          ""
+          "",
       ) || getElementLabel(sample)
     : getElementLabel(sample);
   const nearbyText = getNearbyText(sample);
@@ -917,7 +864,6 @@ function roleForCell(cellContext) {
 }
 
 function toAiSlot(slot) {
-  // The AI sees only this — no DOM references, no selectors.
   const out = {
     id: slot.id,
     kind: slot.kind,
@@ -933,9 +879,7 @@ function toAiSlot(slot) {
   return out;
 }
 
-// ============================================================================
 // Navigation chrome filter (don't expose Next/Submit/Save/tabs as slots)
-// ============================================================================
 
 function isNavigationChrome(element) {
   if (isCheckMyWorkControl(element)) return true;
@@ -948,25 +892,22 @@ function isNavigationChrome(element) {
   const isTabRole = role === "tab" || element.closest("[role='tablist']");
   if (isTabRole) return true;
 
-  // Top-level Next/Submit/Hand-in.
   if (element.closest(".footer__navigation--wrap")) return true;
   if (element.closest(".header__exits")) return true;
 
-  // In-tool save/record buttons (the navigator clicks these directly).
   const text = getControlText(element).toLowerCase();
   if (
     /\b(record entry|save entry|save transaction|record transaction|save & next|next part|save and next)\b/i.test(
-      text
+      text,
     )
   ) {
     return true;
   }
 
-  // Generic "click to navigate" buttons we don't want the AI to drive.
   if (
     (tag === "button" || tag === "a" || role === "button") &&
     /^(next|submit|continue|finish|done|hand in|save|cancel|close)$/i.test(
-      text.trim()
+      text.trim(),
     )
   ) {
     return true;
@@ -975,9 +916,7 @@ function isNavigationChrome(element) {
   return false;
 }
 
-// ============================================================================
 // Slot executor
-// ============================================================================
 
 async function applySlots(slotAnswers) {
   let filledAny = false;
@@ -1010,7 +949,7 @@ async function applySlots(slotAnswers) {
       debugLog(
         "apply_slot_error",
         { slotId, kind: slot.kind, value, error },
-        "error"
+        "error",
       );
     }
     await delay(200);
@@ -1026,7 +965,6 @@ async function applySlot(slot, value) {
     return;
   }
 
-  // Resolve the element through the slot attribute (robust to DOM rebuilds).
   const element = resolveSlotElement(slot);
   if (!element) {
     throw new Error(`Slot element not found: ${slot.id}`);
@@ -1048,22 +986,28 @@ async function applySlot(slot, value) {
 async function applyChoiceSlot(slot, value) {
   const wanted = Array.isArray(value) ? value : [value];
   const wantedNorm = wanted.map((v) => normalizeComparable(String(v)));
+  const matchedWanted = new Set();
 
   for (const choice of slot.choices) {
     const choiceNorm = normalizeComparable(choice.value);
-    const matched = wantedNorm.some(
+    const matchedIndex = wantedNorm.findIndex(
       (w) =>
         choiceNorm === w ||
-        (choiceNorm && w && (choiceNorm.includes(w) || w.includes(choiceNorm)))
+        (choiceNorm && w && (choiceNorm.includes(w) || w.includes(choiceNorm))),
     );
-    if (!matched) continue;
+    if (matchedIndex === -1) continue;
     const target = resolveAnyElement(choice.element);
     if (!target) {
-      debugLog("apply_choice_element_missing", { slot, choice }, "warn");
-      continue;
+      throw new Error(`Choice element not found: ${choice.value}`);
     }
     clickElement(target);
+    matchedWanted.add(matchedIndex);
     if (slot.kind === "choice") return;
+  }
+
+  const missing = wanted.filter((_, index) => !matchedWanted.has(index));
+  if (missing.length) {
+    throw new Error(`Choice option not found: ${missing.join(", ")}`);
   }
 }
 
@@ -1088,8 +1032,6 @@ function resolveAnyElement(element) {
 }
 
 function formatNumberForCell(value) {
-  // Pass through strings unchanged — AI is instructed to use parentheses for
-  // negatives. Convert numbers to strings.
   if (typeof value === "number") {
     if (value < 0) return `(${Math.abs(value)})`;
     return String(value);
@@ -1097,9 +1039,7 @@ function formatNumberForCell(value) {
   return String(value);
 }
 
-// ============================================================================
 // Navigator (deterministic post-apply)
-// ============================================================================
 
 async function navigateForward({ filledSlots }) {
   if (!isAutomating) return false;
@@ -1112,9 +1052,6 @@ async function navigateForward({ filledSlots }) {
     questionNumber: getCurrentQuestionNumber(),
   });
 
-  // 1. If we just filled slots, save in-tool first. Then decide whether the
-  //    save left us with more sub-problems in the same Required tab (the
-  //    accounting-tool transaction carousel) or whether the tab is finished.
   if (filledSlots) {
     const saveButton = findInToolSaveButton();
     if (saveButton) {
@@ -1124,9 +1061,8 @@ async function navigateForward({ filledSlots }) {
       await waitForInToolSaveToSettle();
       if (!isAutomating) return false;
 
-      const stillInCarousel = await advanceWithinCarouselAfterSave(
-        beforeActiveNumber
-      );
+      const stillInCarousel =
+        await advanceWithinCarouselAfterSave(beforeActiveNumber);
       debugLog("navigate_carousel_decision", {
         beforeActiveNumber,
         afterActiveNumber: getActiveTransactionNumberAcrossFrames(),
@@ -1137,25 +1073,15 @@ async function navigateForward({ filledSlots }) {
         return true;
       }
 
-      // Carousel exhausted (or no carousel at all) — this tab's work is done.
       markActiveTabAnswered();
     } else {
       debugLog("navigate_no_save_button");
-      // No in-tool save button on this tab — McGraw auto-saves on tab switch
-      // (and the embedded tool's "Next" button does the same). Mark the
-      // active tab answered so findNextRequiredTab doesn't loop back to it
-      // when we land on the following tab.
       markActiveTabAnswered();
     }
   } else {
-    // Fall-through from the zero-snapshot path: this tab has no fillable
-    // slots (Requirement / auto-populated Ledger / etc.). Mark it answered
-    // so the navigator doesn't oscillate back to it after visiting another
-    // empty tab.
     markActiveTabAnswered();
   }
 
-  // 2. Move to the next un-visited Required tab on the current question.
   const nextTab = findNextRequiredTab();
   if (nextTab) {
     debugLog("navigate_next_tab_click", {
@@ -1166,7 +1092,6 @@ async function navigateForward({ filledSlots }) {
     return true;
   }
 
-  // 3. Click main-page Next.
   const mainNext = findMainNextButton();
   if (mainNext) {
     debugLog("navigate_main_next_click", {
@@ -1181,14 +1106,13 @@ async function navigateForward({ filledSlots }) {
     return true;
   }
 
-  // 4. Final assignment Submit.
   const submit = findMainSubmitButton();
   if (submit && canAutoSubmitAssignment()) {
     if (await getDisableAutoSubmit()) {
       debugLog("navigate_submit_disabled_by_setting", { submit });
       setAutomationDiagnostic("auto_submit_disabled");
       stopAutomation(
-        "Auto-submit is disabled in settings. Review your answers and submit manually."
+        "Auto-submit is disabled in settings. Review your answers and submit manually.",
       );
       return true;
     }
@@ -1206,22 +1130,13 @@ async function navigateForward({ filledSlots }) {
   return false;
 }
 
-// After clicking Record entry, decide whether to stay inside the current
-// Required tab's carousel or treat it as done. Returns true if there's more
-// work to do here (caller should not advance to a new tab).
 async function advanceWithinCarouselAfterSave(beforeActiveNumber) {
-  // No carousel on this tab — nothing to wait for.
   if (beforeActiveNumber == null) return false;
 
-  // McGraw usually auto-advances after Record entry. Poll briefly for the
-  // active transaction number to change.
   for (let i = 0; i < 10; i++) {
     if (!isAutomating) return false;
     const currentActive = getActiveTransactionNumberAcrossFrames();
     if (currentActive != null && currentActive > beforeActiveNumber) {
-      // Forward advance = McGraw moved us to the next sub-problem. Trust
-      // the index move alone; the "not yet entered" annotation isn't always
-      // populated by the first poll after save.
       const unentered = activeTransactionIsUnentered();
       const activeText = getActiveTransactionAnnotationText();
       debugLog("carousel_advance_observed", {
@@ -1236,8 +1151,6 @@ async function advanceWithinCarouselAfterSave(beforeActiveNumber) {
     await delay(150);
   }
 
-  // No auto-advance. If the "Move to next transaction" arrow is enabled,
-  // there's another transaction in this tab's carousel — click it.
   if (!isAutomating) return false;
   for (const frame of getAccessibleDocuments()) {
     if (frame.frame === "main") continue;
@@ -1249,7 +1162,6 @@ async function advanceWithinCarouselAfterSave(beforeActiveNumber) {
     }
   }
 
-  // Arrow disabled or absent — carousel is done.
   return false;
 }
 
@@ -1280,7 +1192,6 @@ function activeTransactionIsUnentered() {
     const text = getControlText(active, { preferAriaLabel: true });
     if (/\bnot yet entered\b/i.test(text)) return true;
     if (/\bentry entered\b/i.test(text)) return false;
-    // Active button with no annotation: assume un-entered (we just got here).
     return true;
   }
   return false;
@@ -1299,7 +1210,7 @@ function markActiveTabAnswered() {
     debugLog(
       "mark_tab_answered_no_active",
       { visibleTabs: getVisibleAssessmentTabLabels() },
-      "warn"
+      "warn",
     );
   }
 }
@@ -1310,15 +1221,15 @@ function findInToolSaveButton() {
 
     const controls = Array.from(
       frame.doc.querySelectorAll(
-        "#saveTransation, #saveTransaction, input[type='button'], button, [role='button']"
-      )
+        "#saveTransation, #saveTransaction, input[type='button'], button, [role='button']",
+      ),
     );
     const match = controls.find((element) => {
       if (!isElementVisibleEnough(element)) return false;
       if (isDisabledControl(element)) return false;
       const text = getControlText(element);
       return /\b(record entry|save entry|record transaction|save transaction|save & next)\b/i.test(
-        text
+        text,
       );
     });
     if (match) return match;
@@ -1334,8 +1245,8 @@ function findJournalEntryWorksheetButton() {
       frame.doc.querySelector("#viewGJ"),
       ...Array.from(
         frame.doc.querySelectorAll(
-          "button, input[type='button'], [role='button']"
-        )
+          "button, input[type='button'], [role='button']",
+        ),
       ),
     ].filter(Boolean);
 
@@ -1343,7 +1254,7 @@ function findJournalEntryWorksheetButton() {
       if (!isElementVisibleEnough(element)) return false;
       if (isDisabledControl(element)) return false;
       const text = normalizeWhitespace(
-        element.value || element.innerText || element.textContent || ""
+        element.value || element.innerText || element.textContent || "",
       );
       return /^view\s+journal\s+entry\s+worksheet$/i.test(text);
     });
@@ -1353,17 +1264,11 @@ function findJournalEntryWorksheetButton() {
 }
 
 function findSetupRevealButton() {
-  // Buttons that reveal the actual answer editor — clicking them is
-  // deterministic when the snapshot turns up zero slots.
-  //
-  // We deliberately exclude "View transaction list" / "View general journal":
-  // those toggle view modes inside the accounting tool and would hide the
-  // active answer editor rather than reveal one.
   for (const frame of getAccessibleDocuments()) {
     const controls = Array.from(
       frame.doc.querySelectorAll(
-        "button, input[type='button'], a[href], [role='button']"
-      )
+        "button, input[type='button'], a[href], [role='button']",
+      ),
     );
     const match = controls.find((element) => {
       if (!isElementVisibleEnough(element)) return false;
@@ -1395,12 +1300,16 @@ function hasInToolSaveCompleted() {
     if (frame.frame === "main") continue;
 
     const bodyText = frame.doc.body?.innerText || "";
-    if (/journal entry recorded successfully|entry recorded successfully/i.test(bodyText)) {
+    if (
+      /journal entry recorded successfully|entry recorded successfully/i.test(
+        bodyText,
+      )
+    ) {
       return true;
     }
 
     const activeTransaction = frame.doc.querySelector(
-      ".transactionButton.active, input.active, button.active"
+      ".transactionButton.active, input.active, button.active",
     );
     const activeText = activeTransaction
       ? getControlText(activeTransaction, { preferAriaLabel: true })
@@ -1420,9 +1329,11 @@ function hasInToolSaveCompleted() {
 function findTransactionNextArrow(doc) {
   return Array.from(
     doc.querySelectorAll(
-      ".accountingtool_navigationcarousel [aria-label*='Move to next transaction'], .accountingtool_navigationcarousel .next, .accountingtool_navigationcarousel .icon-Nxt"
-    )
-  ).find((control) => isElementVisibleEnough(control) && !isDisabledControl(control));
+      ".accountingtool_navigationcarousel [aria-label*='Move to next transaction'], .accountingtool_navigationcarousel .next, .accountingtool_navigationcarousel .icon-Nxt",
+    ),
+  ).find(
+    (control) => isElementVisibleEnough(control) && !isDisabledControl(control),
+  );
 }
 
 function getActiveTransactionNumber(doc) {
@@ -1433,29 +1344,33 @@ function getActiveTransactionButton(doc) {
   return getTransactionButtons(doc).find(
     (button) =>
       button.classList.contains("active") ||
-      button.getAttribute("aria-selected") === "true"
+      button.getAttribute("aria-selected") === "true",
   );
 }
 
 function getTransactionButtons(doc) {
   return Array.from(
     doc.querySelectorAll(
-      ".accountingtool_navigationcarousel [role='tab'], .accountingtool_navigationcarousel input[type='button'], .accountingtool_navigationcarousel button"
-    )
-  ).filter((button) => isElementVisibleEnough(button) && !isDisabledControl(button));
+      ".accountingtool_navigationcarousel [role='tab'], .accountingtool_navigationcarousel input[type='button'], .accountingtool_navigationcarousel button",
+    ),
+  ).filter(
+    (button) => isElementVisibleEnough(button) && !isDisabledControl(button),
+  );
 }
 
 function getTransactionButtonNumber(button) {
   if (!button) return null;
   const visibleNumber = parseTransactionNumberText(button.value || "");
   if (visibleNumber != null) return visibleNumber;
-  const refNumber = parseTransactionNumberText(button.getAttribute("ref") || "");
+  const refNumber = parseTransactionNumberText(
+    button.getAttribute("ref") || "",
+  );
   if (refNumber != null) return refNumber;
   return parseTransactionNumberText(
     button.getAttribute("aria-label") ||
       button.innerText ||
       button.textContent ||
-      ""
+      "",
   );
 }
 
@@ -1494,14 +1409,15 @@ function findMainNextButton() {
   ].filter(Boolean);
 
   return candidates.find(
-    (b) =>
-      isElementVisibleEnough(b) && !isDisabledControl(b) && !b.disabled
+    (b) => isElementVisibleEnough(b) && !isDisabledControl(b) && !b.disabled,
   );
 }
 
 function findMainSubmitButton() {
-  return findButtonByText(/^submit$/i, ".header__exits") ||
-    findButtonByText(/^submit$/i);
+  return (
+    findButtonByText(/^submit$/i, ".header__exits") ||
+    findButtonByText(/^submit$/i)
+  );
 }
 
 function canAutoSubmitAssignment() {
@@ -1509,14 +1425,12 @@ function canAutoSubmitAssignment() {
   if (!progress) return false;
   if (progress.current < progress.total) return false;
 
-  // Trust DOM indicators: every visible tab on this question is touched OR
-  // displays an "answered" indicator.
   const visibleTabs = getVisibleAssessmentTabLabels().map(normalizeComparable);
   if (visibleTabs.length) {
     return visibleTabs.every(
       (label) =>
         answeredTabsForCurrentQuestion.has(label) ||
-        tabHasAnsweredIndicator(label)
+        tabHasAnsweredIndicator(label),
     );
   }
   return true;
@@ -1525,7 +1439,7 @@ function canAutoSubmitAssignment() {
 function tabHasAnsweredIndicator(label) {
   const tabs = getVisibleAssessmentTabs();
   const tab = tabs.find(
-    (t) => normalizeComparable(getAssessmentTabLabel(t)) === label
+    (t) => normalizeComparable(getAssessmentTabLabel(t)) === label,
   );
   if (!tab) return false;
   const text = (tab.innerText || tab.textContent || "").toLowerCase();
@@ -1536,7 +1450,7 @@ async function confirmSubmitIfPresent() {
   await delay(600);
   const modalButton = findButtonByText(
     /^(submit|submit assignment|hand in|yes|confirm|continue)$/i,
-    "ic-modal[aria-hidden='false'], [role='dialog'][aria-hidden='false'], .modal[aria-hidden='false']"
+    "ic-modal[aria-hidden='false'], [role='dialog'][aria-hidden='false'], .modal[aria-hidden='false']",
   );
   if (modalButton) clickElement(modalButton);
 }
@@ -1547,7 +1461,11 @@ function findButtonByText(pattern, rootSelector = null) {
       ? Array.from(frame.doc.querySelectorAll(rootSelector))
       : [frame.doc];
     const buttons = roots.flatMap((root) =>
-      Array.from(root.querySelectorAll("button, [role='button'], a[href], input[type='button']"))
+      Array.from(
+        root.querySelectorAll(
+          "button, [role='button'], a[href], input[type='button']",
+        ),
+      ),
     );
     const match = buttons.find((button) => {
       if (!isElementVisibleEnough(button)) return false;
@@ -1557,7 +1475,7 @@ function findButtonByText(pattern, rootSelector = null) {
           button.innerText ||
           button.textContent ||
           button.getAttribute("aria-label") ||
-          ""
+          "",
       );
       return pattern.test(text);
     });
@@ -1566,9 +1484,7 @@ function findButtonByText(pattern, rootSelector = null) {
   return null;
 }
 
-// ============================================================================
 // SmartBook legacy quiz path
-// ============================================================================
 
 function parseQuestion() {
   const questionElement = document.querySelector(".question");
@@ -1580,7 +1496,7 @@ function parseQuestion() {
   if (document.querySelector(".answers-wrap.multiple-choice")) {
     questionType = "multiple_choice";
     options = Array.from(
-      document.querySelectorAll(".answers--mc .answer__label--mc")
+      document.querySelectorAll(".answers--mc .answer__label--mc"),
     ).map((el) => el.textContent.trim().replace(/^[a-z]\s+/, ""));
   } else if (document.querySelector(".answers-wrap.boolean")) {
     questionType = "true_false";
@@ -1598,7 +1514,9 @@ function parseQuestion() {
     clone.querySelectorAll('span[aria-hidden="true"]').forEach((span) => {
       if (span.textContent.includes("_")) span.textContent = "[BLANK]";
     });
-    clone.querySelectorAll('span[style*="position: absolute"]').forEach((s) => s.remove());
+    clone
+      .querySelectorAll('span[style*="position: absolute"]')
+      .forEach((s) => s.remove());
     questionText = normalizeWhitespace(clone.textContent);
   } else {
     questionText = normalizeWhitespace(questionElement.textContent);
@@ -1630,7 +1548,9 @@ async function applyLegacySmartBookAnswer(answer) {
 
 async function continueSmartBookAfterAnswer() {
   await delay(1500);
-  const nextButton = document.querySelector(".footer__link--next:not([hidden])");
+  const nextButton = document.querySelector(
+    ".footer__link--next:not([hidden])",
+  );
   if (
     nextButton &&
     !nextButton.disabled &&
@@ -1650,7 +1570,9 @@ async function continueSmartBookAfterAnswer() {
 }
 
 function handleMultipleChoiceAnswer(answer) {
-  const radioButtons = document.querySelectorAll('.answers--mc input[type="radio"]');
+  const radioButtons = document.querySelectorAll(
+    '.answers--mc input[type="radio"]',
+  );
   const labels = document.querySelectorAll(".answers--mc .answer__label--mc");
   const answerText = getPrimaryAnswerText(answer);
   const normalizedAnswer = normalizeComparable(answerText);
@@ -1681,8 +1603,8 @@ function handleTrueFalseAnswer(answer) {
     answer === true || normalizedAnswer === "true"
       ? "true"
       : answer === false || normalizedAnswer === "false"
-      ? "false"
-      : "";
+        ? "false"
+        : "";
   if (!expected) return false;
 
   for (const button of buttons) {
@@ -1716,9 +1638,7 @@ function getPrimaryAnswerText(answer) {
   return String(answer);
 }
 
-// ============================================================================
 // Page snapshot prep / DOM normalization
-// ============================================================================
 
 async function waitForConnectContentReady(timeout = 5000) {
   if (isQuizPage()) return;
@@ -1731,8 +1651,8 @@ async function waitForConnectContentReady(timeout = 5000) {
       if (frame.frame === "main") return false;
       return Boolean(
         frame.doc.querySelector(
-          "td.responseCell, .groupResponse, .dropDownList, input:not([type='hidden']), textarea, select"
-        )
+          "td.responseCell, .groupResponse, .dropDownList, input:not([type='hidden']), textarea, select",
+        ),
       );
     });
     if (!hasAssessmentFrame || hasAnswerControls) return;
@@ -1756,13 +1676,14 @@ function getAccessibleDocuments() {
           doc: iframe.contentDocument,
           label:
             `FRAME ${index}: ` +
-            (iframe.getAttribute("title") || iframe.name || iframe.id || "iframe"),
+            (iframe.getAttribute("title") ||
+              iframe.name ||
+              iframe.id ||
+              "iframe"),
           frame: index,
         });
       }
-    } catch (error) {
-      // cross-origin frame: skip
-    }
+    } catch (error) {}
   });
 
   return docs.filter((entry) => entry.doc && entry.doc.body);
@@ -1792,7 +1713,10 @@ function getInteractiveElements(doc) {
     seen.add(element);
     if (!isElementVisibleEnough(element)) return false;
     if (isDisabledControl(element)) return false;
-    if (element.matches("a[href]") && !normalizeWhitespace(element.textContent)) {
+    if (
+      element.matches("a[href]") &&
+      !normalizeWhitespace(element.textContent)
+    ) {
       return false;
     }
     return true;
@@ -1843,7 +1767,9 @@ function isAccountingNavigationControl(element) {
 
   const text = getControlText(element, { preferAriaLabel: true });
   return (
-    element.matches("[role='tab'], input[type='button'], button, [role='button']") ||
+    element.matches(
+      "[role='tab'], input[type='button'], button, [role='button']",
+    ) ||
     /\bmove to (previous|next) transaction\b/i.test(text) ||
     /\btransaction number\b/i.test(text) ||
     /^\d+$/.test(text)
@@ -1855,7 +1781,8 @@ function isStaleAccountingClone(element) {
   if (element.closest("[data-automcgraw-hidden-duplicate='true']")) return true;
 
   const table = element.closest("table");
-  if (table?.id === "holisticTable" && !isElementVisibleEnough(table)) return true;
+  if (table?.id === "holisticTable" && !isElementVisibleEnough(table))
+    return true;
 
   const sheet = element.closest("#holisticSheet");
   return Boolean(sheet && !isElementVisibleEnough(sheet));
@@ -1874,7 +1801,7 @@ function getControlText(element, options = {}) {
           element.innerText ||
           element.textContent ||
           ariaLabel ||
-          ""
+          "",
   );
 }
 
@@ -1894,7 +1821,7 @@ function getElementLabel(element) {
       element.value ||
       element.innerText ||
       element.textContent ||
-      ""
+      "",
   );
 }
 
@@ -1913,7 +1840,7 @@ function getNearbyText(element) {
     .forEach((node) => node.remove());
   return limitText(
     normalizeWhitespace(clone.innerText || clone.textContent || ""),
-    700
+    700,
   );
 }
 
@@ -1931,11 +1858,11 @@ function getSpreadsheetCellContext(element) {
   const headerText = getHeaderTextForCell(element);
   const leftCell = row.children[columnIndex - 1];
   const leftText = normalizeWhitespace(
-    leftCell?.innerText || leftCell?.textContent || ""
+    leftCell?.innerText || leftCell?.textContent || "",
   );
   const rightCell = row.children[columnIndex + 1];
   const rightText = normalizeWhitespace(
-    rightCell?.innerText || rightCell?.textContent || ""
+    rightCell?.innerText || rightCell?.textContent || "",
   );
   const rowText = normalizeWhitespace(row.innerText || row.textContent || "");
 
@@ -1963,7 +1890,7 @@ function getHeaderTextForCell(element) {
       .map((id) => doc.getElementById(id))
       .filter(Boolean)
       .map((header) => header.innerText || header.textContent || "")
-      .join(" ")
+      .join(" "),
   );
 }
 
@@ -1971,7 +1898,6 @@ function prepareDocumentForSnapshot(doc) {
   if (!doc?.body) return;
   closeDropdownOverlays(doc);
   normalizeAllSpreadsheetCellClasses(doc);
-  repairDuplicatedAccountingChrome(doc);
 }
 
 function normalizeAllSpreadsheetCellClasses(doc) {
@@ -1985,103 +1911,19 @@ function normalizeSpreadsheetCellClasses(element) {
   const uniqueClasses = uniqueStrings(
     String(element.className || "")
       .split(/\s+/)
-      .filter(Boolean)
+      .filter(Boolean),
   );
   element.className = uniqueClasses.join(" ");
 }
 
-function repairDuplicatedAccountingChrome(doc) {
-  const workspace = doc.querySelector("#workspace");
-  if (!workspace || !doc.querySelector("#transactionDetails")) return;
-
-  hideDuplicateVisibleElements(
-    Array.from(workspace.querySelectorAll("#transactionDetails > .clearfix"))
-      .filter((el) => el.querySelector("#transactionHeader")),
-    scoreTransactionHeaderBlock
-  );
-  hideDuplicateVisibleElements(
-    Array.from(
-      workspace.querySelectorAll(
-        "#transactionDetails > .accountingtool_navigationcarousel"
-      )
-    ),
-    scoreTransactionCarousel
-  );
-  hideDuplicateVisibleElements(
-    Array.from(workspace.querySelectorAll("#transactionDetails > div")).filter(
-      (el) =>
-        /enter debits before credits/i.test(
-          el.innerText || el.textContent || ""
-        )
-    ),
-    () => 1
-  );
-  hideDuplicateVisibleElements(
-    Array.from(workspace.querySelectorAll(":scope > #trans_button_wrpr")),
-    scoreTransactionButtonWrapper
-  );
-  hideDuplicateVisibleElements(
-    Array.from(workspace.querySelectorAll(":scope > #clearTransactionDialog")),
-    () => 1
-  );
-}
-
-function hideDuplicateVisibleElements(elements, scoreElement) {
-  const visible = elements.filter((el) => isElementVisibleEnough(el));
-  if (visible.length <= 1) return [];
-
-  const keep = visible
-    .map((el, index) => ({ el, index, score: scoreElement(el) }))
-    .sort((a, b) => b.score - a.score || a.index - b.index)[0].el;
-  const hidden = [];
-  visible.forEach((el) => {
-    if (el === keep) return;
-    el.setAttribute("data-automcgraw-hidden-duplicate", "true");
-    el.style.display = "none";
-    hidden.push(el);
-  });
-  return hidden;
-}
-
-function scoreTransactionHeaderBlock(element) {
-  const text = normalizeWhitespace(element.innerText || element.textContent || "");
-  let score = 1;
-  if (/journal entry worksheet/i.test(text)) score += 2;
-  if (/transaction index/i.test(text)) score += 1;
-  return score;
-}
-
-function scoreTransactionCarousel(element) {
-  const text = normalizeWhitespace(element.innerText || element.textContent || "");
-  const ariaText = Array.from(element.querySelectorAll("[aria-label]"))
-    .map((control) => control.getAttribute("aria-label") || "")
-    .join(" ");
-  let score = 1;
-  if (/[A-Za-z]{4,}/.test(text)) score += 4;
-  if (/\bnot yet entered\b/i.test(ariaText)) score += 3;
-  if (/\bentry entered\b/i.test(ariaText)) score += 1;
-  if (/^\.*$/.test(text)) score -= 4;
-  return score;
-}
-
-function scoreTransactionButtonWrapper(element) {
-  const text = normalizeWhitespace(element.innerText || element.textContent || "");
-  let score = 1;
-  if (/\brecord entry\b/i.test(text)) score += 3;
-  if (/\bview general journal\b/i.test(text)) score += 1;
-  return score;
-}
-
-// ============================================================================
 // Dropdown options reading (open dropdown, read overlay, cache)
-// ============================================================================
 
 async function getOptionsForControl(element, doc) {
   if (element.tagName.toLowerCase() === "select") {
     return uniqueStrings(
       Array.from(element.options)
         .map((option) => normalizeWhitespace(option.textContent))
-        .filter(Boolean)
+        .filter(Boolean),
     );
   }
 
@@ -2114,7 +1956,7 @@ async function getOptionsForControl(element, doc) {
     return options;
   }
 
-  return getCachedDropdownOptions(doc, cacheKey);
+  return getExactCachedDropdownOptions(doc, cacheKey);
 }
 
 function getDropdownOptionCacheKey(element) {
@@ -2124,11 +1966,6 @@ function getDropdownOptionCacheKey(element) {
     element.getAttribute("aria-controls") || "",
     element.closest("table")?.id || "",
   ].join("|");
-}
-
-function getCachedDropdownOptions(doc, key) {
-  const docCache = dropdownOptionsCache.get(doc);
-  return docCache?.get(key) || docCache?.get("__last__") || [];
 }
 
 function getExactCachedDropdownOptions(doc, key) {
@@ -2144,7 +1981,6 @@ function setCachedDropdownOptions(doc, key, options) {
   }
   const values = uniqueStrings(options);
   docCache.set(key, values);
-  docCache.set("__last__", values);
 }
 
 function readDropdownOptions(element, doc) {
@@ -2163,10 +1999,12 @@ function readDropdownOptions(element, doc) {
 
   for (const root of listRoots) {
     const options = root.querySelectorAll(
-      "[role='option'], li, option, .list_content"
+      "[role='option'], li, option, .list_content",
     );
     options.forEach((option) => {
-      const text = normalizeWhitespace(option.innerText || option.textContent || "");
+      const text = normalizeWhitespace(
+        option.innerText || option.textContent || "",
+      );
       if (text) optionTexts.push(text);
     });
   }
@@ -2176,7 +2014,12 @@ function readDropdownOptions(element, doc) {
 
 function closeDropdownOverlays(doc) {
   const win = doc.defaultView || window;
-  const targets = [doc.activeElement, doc.body, doc.documentElement, doc].filter(Boolean);
+  const targets = [
+    doc.activeElement,
+    doc.body,
+    doc.documentElement,
+    doc,
+  ].filter(Boolean);
 
   targets.forEach((target) => {
     ["keydown", "keyup"].forEach((type) => {
@@ -2188,7 +2031,7 @@ function closeDropdownOverlays(doc) {
           which: 27,
           bubbles: true,
           cancelable: true,
-        })
+        }),
       );
     });
   });
@@ -2196,19 +2039,9 @@ function closeDropdownOverlays(doc) {
   doc.activeElement?.blur?.();
 }
 
-// ============================================================================
 // DOM mechanics: click, fill, select, spreadsheet
-// ============================================================================
 
 function clickElement(element) {
-  const text = normalizeWhitespace(
-    element.innerText ||
-      element.textContent ||
-      element.value ||
-      element.getAttribute("aria-label") ||
-      ""
-  ).slice(0, 120);
-  const frame = element.ownerDocument === document ? "main" : "iframe";
   element.scrollIntoView({ block: "center", inline: "center" });
   element.focus?.();
   dispatchMouseSequence(element, { includeClick: false });
@@ -2289,7 +2122,7 @@ async function fillSpreadsheetCell(element, text) {
       actual: element.innerText || element.textContent || "",
       editorFound: Boolean(editor),
     },
-    "error"
+    "error",
   );
   throw new Error(`Spreadsheet cell did not keep value: ${text}`);
 }
@@ -2321,7 +2154,7 @@ function getSpreadsheetEditor(doc, targetCell = null) {
   }
 
   const editableCandidates = Array.from(
-    doc.querySelectorAll("[contenteditable='true']")
+    doc.querySelectorAll("[contenteditable='true']"),
   ).filter((editor) => isUsableSpreadsheetEditor(editor, targetCell));
 
   if (!editableCandidates.length) return null;
@@ -2331,7 +2164,10 @@ function getSpreadsheetEditor(doc, targetCell = null) {
   return editableCandidates.sort((a, b) => {
     const aRect = a.getBoundingClientRect();
     const bRect = b.getBoundingClientRect();
-    return getRectDistanceScore(targetRect, aRect) - getRectDistanceScore(targetRect, bRect);
+    return (
+      getRectDistanceScore(targetRect, aRect) -
+      getRectDistanceScore(targetRect, bRect)
+    );
   })[0];
 }
 
@@ -2379,12 +2215,16 @@ function setElementTextValue(element, text) {
 }
 
 function spreadsheetCellHasValue(element, expectedText) {
-  const actualText = normalizeWhitespace(element.innerText || element.textContent || "");
+  const actualText = normalizeWhitespace(
+    element.innerText || element.textContent || "",
+  );
   const expected = normalizeWhitespace(expectedText);
   const actualNumber = normalizeNumberText(actualText);
   const expectedNumber = normalizeNumberText(expected);
   if (actualNumber || expectedNumber) {
-    return Boolean(actualNumber && expectedNumber && actualNumber === expectedNumber);
+    return Boolean(
+      actualNumber && expectedNumber && actualNumber === expectedNumber,
+    );
   }
   return normalizeComparable(actualText) === normalizeComparable(expected);
 }
@@ -2424,7 +2264,7 @@ function dispatchMouseSequence(element, options = {}) {
         buttons: type === "mouseup" || type === "click" ? 0 : 1,
         clientX,
         clientY,
-      })
+      }),
     );
   });
 
@@ -2439,7 +2279,7 @@ function dispatchMouseSequence(element, options = {}) {
       buttons: 0,
       clientX,
       clientY,
-    })
+    }),
   );
 }
 
@@ -2454,7 +2294,7 @@ function dispatchEnterKey(element) {
         which: 13,
         bubbles: true,
         cancelable: true,
-      })
+      }),
     );
   });
 }
@@ -2476,7 +2316,7 @@ function selectNativeOption(select, text) {
   const match = options.find(
     (option) =>
       normalizeComparable(option.textContent) === normalizeComparable(text) ||
-      normalizeComparable(option.value) === normalizeComparable(text)
+      normalizeComparable(option.value) === normalizeComparable(text),
   );
   if (!match) throw new Error(`Dropdown option not found: ${text}`);
   select.value = match.value;
@@ -2484,9 +2324,6 @@ function selectNativeOption(select, text) {
 }
 
 async function selectCustomDropdownOption(element, text) {
-  // Already at the desired value — clicking again would re-open the panel
-  // and (for view-switching dropdowns) trigger a rebuild that strips slot
-  // attributes from sibling fields, cascading "element not found" errors.
   if (dropdownSelectionMatches(element, text)) return;
 
   const doc = element.ownerDocument;
@@ -2524,18 +2361,21 @@ function findDropdownOption(doc, text) {
   const target = normalizeComparable(text);
   const options = Array.from(
     doc.querySelectorAll(
-      ".listContainer [role='option'], [role='listbox'] [role='option'], .listContainer li"
-    )
+      ".listContainer [role='option'], [role='listbox'] [role='option'], .listContainer li",
+    ),
   );
 
   const exact = options.find(
     (option) =>
-      normalizeComparable(option.innerText || option.textContent || "") === target
+      normalizeComparable(option.innerText || option.textContent || "") ===
+      target,
   );
   if (exact) return exact;
 
   return options.find((option) => {
-    const optionText = normalizeComparable(option.innerText || option.textContent || "");
+    const optionText = normalizeComparable(
+      option.innerText || option.textContent || "",
+    );
     return isLikelyDropdownOptionMatch(target, optionText);
   });
 }
@@ -2568,7 +2408,7 @@ function dropdownSelectionMatches(element, expectedText) {
 
 function normalizeDropdownDisplayText(value) {
   return normalizeComparable(
-    normalizeWhitespace(value).replace(/^\d+\s*:\s*/, "")
+    normalizeWhitespace(value).replace(/^\d+\s*:\s*/, ""),
   );
 }
 
@@ -2584,9 +2424,7 @@ function dispatchInputChangeEvents(element) {
   element.dispatchEvent(new win.Event("change", { bubbles: true }));
 }
 
-// ============================================================================
 // Visibility / disabled checks
-// ============================================================================
 
 function isElementVisibleEnough(element) {
   const doc = element.ownerDocument;
@@ -2595,7 +2433,7 @@ function isElementVisibleEnough(element) {
 
   if (
     element.closest(
-      "[hidden], [aria-hidden='true'], [data-automcgraw-hidden-duplicate='true']"
+      "[hidden], [aria-hidden='true'], [data-automcgraw-hidden-duplicate='true']",
     )
   ) {
     return false;
@@ -2625,21 +2463,23 @@ function isDisabledControl(element) {
   );
 }
 
-// ============================================================================
 // Visible-text extraction
-// ============================================================================
 
 function extractVisibleText(doc) {
   const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
       const parent = node.parentElement;
       if (!parent) return NodeFilter.FILTER_REJECT;
-      if (parent.closest(".header__automcgraw")) return NodeFilter.FILTER_REJECT;
-      if (parent.closest("script, style, noscript, svg")) return NodeFilter.FILTER_REJECT;
-      if (parent.closest("[hidden], [aria-hidden='true']")) return NodeFilter.FILTER_REJECT;
+      if (parent.closest(".header__automcgraw"))
+        return NodeFilter.FILTER_REJECT;
+      if (parent.closest("script, style, noscript, svg"))
+        return NodeFilter.FILTER_REJECT;
+      if (parent.closest("[hidden], [aria-hidden='true']"))
+        return NodeFilter.FILTER_REJECT;
       if (isAccountingNavigationText(parent)) return NodeFilter.FILTER_REJECT;
       if (!isElementVisibleEnough(parent)) return NodeFilter.FILTER_REJECT;
-      if (!normalizeWhitespace(node.textContent)) return NodeFilter.FILTER_REJECT;
+      if (!normalizeWhitespace(node.textContent))
+        return NodeFilter.FILTER_REJECT;
       return NodeFilter.FILTER_ACCEPT;
     },
   });
@@ -2656,14 +2496,12 @@ function extractVisibleText(doc) {
 function isAccountingNavigationText(element) {
   return Boolean(
     element.closest(
-      ".accountingtool_navigationcarousel .control_buttons, .accountingtool_navigationcarousel .prev, .accountingtool_navigationcarousel .next, .accountingtool_navigationcarousel .icon-Prv, .accountingtool_navigationcarousel .icon-Next"
-    )
+      ".accountingtool_navigationcarousel .control_buttons, .accountingtool_navigationcarousel .prev, .accountingtool_navigationcarousel .next, .accountingtool_navigationcarousel .icon-Prv, .accountingtool_navigationcarousel .icon-Next",
+    ),
   );
 }
 
-// ============================================================================
 // Progress + tab tracking
-// ============================================================================
 
 function getProgress() {
   const progressInfo = document.querySelector(".footer__progress__heading");
@@ -2673,7 +2511,9 @@ function getProgress() {
   const totalMatch = text.match(/\bof\s+(\d+)\b/i);
   if (!match && !totalMatch) return null;
   const current = match ? parseInt(match[1], 10) : getCurrentQuestionNumber();
-  const total = totalMatch ? parseInt(totalMatch[1], 10) : parseInt(match[2], 10);
+  const total = totalMatch
+    ? parseInt(totalMatch[1], 10)
+    : parseInt(match[2], 10);
   if (!current || !total) return null;
   return { current, total };
 }
@@ -2687,7 +2527,7 @@ function getCurrentQuestionNumber() {
   ];
   for (const source of sources) {
     const match = normalizeWhitespace(source || "").match(
-      /\b(?:question|item)\s+(\d+)\b/i
+      /\b(?:question|item)\s+(\d+)\b/i,
     );
     if (match) return parseInt(match[1], 10);
   }
@@ -2701,7 +2541,7 @@ function getActiveAssessmentTabLabel() {
       (tab) =>
         tab.getAttribute("aria-selected") === "true" ||
         tab.classList.contains("active") ||
-        tab.classList.contains("selected")
+        tab.classList.contains("selected"),
     ) || null;
   return activeTab ? getAssessmentTabLabel(activeTab) : "";
 }
@@ -2732,13 +2572,11 @@ function getAssessmentTabLabel(tab) {
       tab.textContent ||
       tab.getAttribute("aria-label") ||
       tab.getAttribute("title") ||
-      ""
+      "",
   );
 }
 
-// ============================================================================
 // Assistant button
-// ============================================================================
 
 function addAssistantButton() {
   const helpLink = document.querySelector(".header__help");
@@ -2775,15 +2613,21 @@ function addAssistantButton() {
     align-items: center;
     transition: background-color 0.2s ease;
   `;
-  btn.addEventListener("mouseenter", () => (btn.style.backgroundColor = "#f5f5f5"));
-  btn.addEventListener("mouseleave", () => (btn.style.backgroundColor = "#fff"));
+  btn.addEventListener(
+    "mouseenter",
+    () => (btn.style.backgroundColor = "#f5f5f5"),
+  );
+  btn.addEventListener(
+    "mouseleave",
+    () => (btn.style.backgroundColor = "#fff"),
+  );
 
   btn.addEventListener("click", () => {
     if (isAutomating) {
       stopAutomation("Manual stop");
     } else {
       const proceed = confirm(
-        "Start automation with your selected AI assistant? It will answer the current item and continue forward when possible.\n\nClick OK to begin, or Cancel to stop."
+        "Start automation with your selected AI assistant? It will answer the current item and continue forward when possible.\n\nClick OK to begin, or Cancel to stop.",
       );
       if (proceed) {
         isAutomating = true;
@@ -2819,8 +2663,14 @@ function addAssistantButton() {
     justify-content: center;
     transition: background-color 0.2s ease;
   `;
-  settingsBtn.addEventListener("mouseenter", () => (settingsBtn.style.backgroundColor = "#f5f5f5"));
-  settingsBtn.addEventListener("mouseleave", () => (settingsBtn.style.backgroundColor = "#fff"));
+  settingsBtn.addEventListener(
+    "mouseenter",
+    () => (settingsBtn.style.backgroundColor = "#f5f5f5"),
+  );
+  settingsBtn.addEventListener(
+    "mouseleave",
+    () => (settingsBtn.style.backgroundColor = "#fff"),
+  );
   settingsBtn.innerHTML = `
     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="12" cy="12" r="3"></circle>
@@ -2843,19 +2693,19 @@ function addAssistantButton() {
   }
 }
 
-// ============================================================================
 // Diagnostic + utilities
-// ============================================================================
 
 function setAutomationDiagnostic(message) {
   document.documentElement.setAttribute(
     "data-automcgraw-diagnostic",
-    `${new Date().toISOString()} ${message}`
+    `${new Date().toISOString()} ${message}`,
   );
 }
 
 function normalizeWhitespace(value) {
-  return String(value || "").replace(/\s+/g, " ").trim();
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function normalizeComparable(value) {
@@ -2895,9 +2745,7 @@ function cssEscape(value) {
   return String(value).replace(/[^a-zA-Z0-9_-]/g, (ch) => `\\${ch}`);
 }
 
-// ============================================================================
 // Boot
-// ============================================================================
 
 setupMessageListener();
 startPageObserver();

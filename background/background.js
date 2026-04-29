@@ -98,7 +98,11 @@ function getDebugState() {
 
 function sanitizeDebugValue(value, depth = 0) {
   if (depth > 4) return "[depth-limit]";
-  if (value == null || typeof value === "number" || typeof value === "boolean") {
+  if (
+    value == null ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
     return value;
   }
   if (typeof value === "string") {
@@ -112,7 +116,9 @@ function sanitizeDebugValue(value, depth = 0) {
     };
   }
   if (Array.isArray(value)) {
-    return value.slice(0, 80).map((item) => sanitizeDebugValue(item, depth + 1));
+    return value
+      .slice(0, 80)
+      .map((item) => sanitizeDebugValue(item, depth + 1));
   }
   if (typeof value === "object") {
     const result = {};
@@ -133,17 +139,13 @@ function isMheTabUrl(url = "") {
 function getAiModelForUrl(url = "") {
   return (
     Object.entries(AI_MODELS).find(([, config]) =>
-      config.hosts.some((host) => url.includes(host))
+      config.hosts.some((host) => url.includes(host)),
     )?.[0] || null
   );
 }
 
 function pickPreferredAiTab(aiModel, tabs) {
-  const preferredHost = AI_MODELS[aiModel]?.preferredHost;
-  if (!preferredHost) return tabs[0];
-  return (
-    tabs.find((tab) => tab.url && tab.url.includes(preferredHost)) || tabs[0]
-  );
+  return tabs[0];
 }
 
 function resolveAiModel(preferredModel, storedModel) {
@@ -184,7 +186,7 @@ function sendMessageWithRetry(tabId, message, maxAttempts = 3, delay = 1000) {
               attempt: attempts,
               error: chrome.runtime.lastError.message,
             },
-            attempts < maxAttempts ? "warn" : "error"
+            attempts < maxAttempts ? "warn" : "error",
           );
           if (attempts < maxAttempts) {
             setTimeout(attemptSend, delay);
@@ -420,10 +422,14 @@ async function processResponse(message) {
 
 async function processAiResponseTimeout(message) {
   try {
-    debugLog("ai_response_timeout", {
-      aiModel: message.aiModel,
-      reason: message.reason,
-    }, "warn");
+    debugLog(
+      "ai_response_timeout",
+      {
+        aiModel: message.aiModel,
+        reason: message.reason,
+      },
+      "warn",
+    );
 
     if (!mheTabId) {
       await findAndStoreTabs(message.aiModel);
@@ -454,7 +460,7 @@ async function cancelAiResponseTimeout(message) {
       aiTabId,
       { type: "cancelResponseObservation" },
       1,
-      300
+      300,
     );
   } catch (error) {
     debugLog("cancel_ai_response_timeout_error", { error }, "error");
@@ -483,7 +489,7 @@ async function waitForTabReady(tabId, maxAttempts = 8) {
       debugLog(
         "wait_for_tab_ready_attempt_error",
         { tabId, attempt: i + 1, error },
-        "warn"
+        "warn",
       );
       console.log(`Tab ${tabId} not ready, attempt ${i + 1}:`, error);
     }

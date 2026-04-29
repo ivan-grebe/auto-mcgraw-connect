@@ -25,6 +25,7 @@ let awaitingAiResponse = false;
 let processingAiResponse = false;
 let consecutiveSetupClicks = 0;
 let consecutiveEmptySnapshots = 0;
+let consecutiveApplyErrorCycles = 0;
 let lastVisitedQuestionNumber = null;
 let answeredTabsForCurrentQuestion = new Set();
 const dropdownOptionsCache = new WeakMap();
@@ -557,10 +558,32 @@ async function handleAiResponse(responseText) {
 
     // Connect slot-graph path.
     const slotAnswers = extractSlotAnswers(parsed);
-    const filledAny = await applySlots(slotAnswers);
+    const { filledAny, errored } = await applySlots(slotAnswers);
 
     // If stop was hit mid-apply, don't let the navigator fire a trailing click.
     if (!isAutomating) return;
+
+    // Apply errored on every slot (typically because an earlier value rebuilt
+    // the DOM and stripped our slot tags). Re-snapshot so the next request
+    // sees the rebuilt graph. Bounded so a genuinely stuck state can't loop.
+    if (errored && !filledAny) {
+      consecutiveApplyErrorCycles++;
+      if (consecutiveApplyErrorCycles < 3) {
+        debugLog("apply_errors_retry", { consecutiveApplyErrorCycles });
+        setTimeout(() => {
+          if (isAutomating) checkForNextStep();
+        }, 1500);
+        return;
+      }
+      debugLog(
+        "apply_errors_exceeded_retries",
+        { consecutiveApplyErrorCycles },
+        "warn"
+      );
+      consecutiveApplyErrorCycles = 0;
+    } else {
+      consecutiveApplyErrorCycles = 0;
+    }
 
     // Hand off to the navigator. The navigator decides when a tab is fully
     // answered (after the last carousel sub-problem, or after a single
@@ -959,6 +982,7 @@ function isNavigationChrome(element) {
 async function applySlots(slotAnswers) {
   let filledAny = false;
   let appliedCount = 0;
+  let errored = false;
   const entries = Object.entries(slotAnswers || {});
   debugLog("apply_slots_start", {
     count: entries.length,
@@ -982,6 +1006,7 @@ async function applySlots(slotAnswers) {
       filledAny = true;
       appliedCount++;
     } catch (error) {
+      errored = true;
       debugLog(
         "apply_slot_error",
         { slotId, kind: slot.kind, value, error },
@@ -991,8 +1016,8 @@ async function applySlots(slotAnswers) {
     await delay(200);
   }
 
-  debugLog("apply_slots_done", { appliedCount, filledAny });
-  return filledAny;
+  debugLog("apply_slots_done", { appliedCount, filledAny, errored });
+  return { filledAny, errored };
 }
 
 async function applySlot(slot, value) {
@@ -2459,6 +2484,11 @@ function selectNativeOption(select, text) {
 }
 
 async function selectCustomDropdownOption(element, text) {
+  // Already at the desired value — clicking again would re-open the panel
+  // and (for view-switching dropdowns) trigger a rebuild that strips slot
+  // attributes from sibling fields, cascading "element not found" errors.
+  if (dropdownSelectionMatches(element, text)) return;
+
   const doc = element.ownerDocument;
   dispatchMouseSequence(element);
   await delay(200);

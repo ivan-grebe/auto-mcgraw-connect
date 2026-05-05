@@ -578,25 +578,6 @@ function extractSlotAnswers(parsed) {
   if (parsed.slots && typeof parsed.slots === "object") {
     return parsed.slots;
   }
-  if (
-    parsed.answer &&
-    typeof parsed.answer === "object" &&
-    !Array.isArray(parsed.answer)
-  ) {
-    console.warn(
-      "[AutoMcGraw] AI returned answer-object shape instead of slots; coercing",
-      parsed.answer,
-    );
-    return parsed.answer;
-  }
-  if (typeof parsed.answer === "string" && lastSlotMap.size === 1) {
-    console.warn(
-      "[AutoMcGraw] AI returned answer-string shape instead of slots; coercing to single slot",
-      parsed.answer,
-    );
-    const onlyId = lastSlotMap.keys().next().value;
-    return { [onlyId]: parsed.answer };
-  }
   return {};
 }
 
@@ -1685,7 +1666,7 @@ function getAccessibleDocuments() {
       }
     } catch (error) {}
   });
-
+ 
   return docs.filter((entry) => entry.doc && entry.doc.body);
 }
 

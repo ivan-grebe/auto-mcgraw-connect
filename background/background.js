@@ -259,9 +259,7 @@ async function processAiResponseTimeout(message) {
 
 async function cancelAiResponseTimeout(message) {
   try {
-    if (!aiTabId) {
-      await findAndStoreTabs(message?.aiModel);
-    }
+    await findAndStoreTabs(message?.aiModel);
     if (!aiTabId) return;
 
     await sendMessageWithRetry(

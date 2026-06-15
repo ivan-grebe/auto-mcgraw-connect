@@ -189,7 +189,12 @@ function stopAutomation(reason = "Quiz completed") {
 
   if (hadPendingAiResponse) {
     try {
-      chrome.runtime.sendMessage({ type: "cancelAiResponseTimeout" });
+      getSelectedAiModel().then((aiModel) => {
+        chrome.runtime.sendMessage({
+          type: "cancelAiResponseTimeout",
+          aiModel,
+        });
+      });
     } catch (error) {}
   }
 
